@@ -104,7 +104,7 @@ redis: 6379
 ### 添加host
 
 ```
-# vim /ets/hosts
+# vim /etc/hosts
 添加下面一行
 127.0.0.1 startalk.com
 ```
