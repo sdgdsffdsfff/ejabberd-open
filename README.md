@@ -133,9 +133,13 @@ redis: 6379
 ```
 # visudo 
 
-在行(root    ALL= (ALL)    ALL)行后添加
-(startalk     ALL= (ALL)    ALL)
-(postgres     ALL= (ALL)    ALL)
+在行
+root    ALL= (ALL)    ALL
+行后添加
+
+startalk     ALL= (ALL)    ALL
+postgres     ALL= (ALL)    ALL
+
 保存后退出
 ```
 
