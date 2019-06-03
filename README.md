@@ -402,6 +402,13 @@ $ export PYTHONPATH=path/to/project/qtalk_search:$PYTHONPATH
 后台启动 (后续将改为gunicorn部署)
 $ sudo nohup python3.6 search.py 1>/dev/null 2>/dev/null &
 ```
+可以执行以下脚本来检查一些常见的错误
+[check.sh](https://github.com/qunarcorp/or_open/blob/master/tools/check.sh)
+```
+# sed -i 's/ip/自己的ip/g' ./check.sh
+# chmod +x check.sh
+# ./check.sh
+```
 
 到此，服务端已经安装完成。
 请下载[startalk客户端](https://im.qunar.com/new/#/download)
