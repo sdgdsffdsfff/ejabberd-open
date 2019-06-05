@@ -1270,28 +1270,12 @@ CREATE TABLE public.muc_vcard_info (
     muc_title text,
     muc_pic text DEFAULT '/file/v2/download/eb574c5a1d33c72ba14fc1616cde3a42.png'::text,
     show_name_pinyin varchar(1000) DEFAULT 'xinjianqunliao|xjql',
+    update_time timestamp with time zone DEFAULT (now())::timestamp(3) with time zone NOT NULL,
     version integer DEFAULT 1
 );
 
 
 ALTER TABLE public.muc_vcard_info OWNER TO ejabberd;
-
---
--- TOC entry 269 (class 1259 OID 17629)
--- Name: muc_vcard_info_backup; Type: TABLE; Schema: public; Owner: ejabberd
---
-
-CREATE TABLE public.muc_vcard_info_backup (
-    muc_name text NOT NULL,
-    show_name text NOT NULL,
-    muc_desc text,
-    muc_title text,
-    muc_pic text,
-    version integer DEFAULT 1
-);
-
-
-ALTER TABLE public.muc_vcard_info_backup OWNER TO ejabberd;
 
 
 --
@@ -3079,16 +3063,6 @@ ALTER TABLE ONLY public.muc_room_users
 
 ALTER TABLE ONLY public.muc_user_mark
     ADD CONSTRAINT muc_user_mark_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 4289 (class 2606 OID 18267)
--- Name: muc_vcard_info_backup muc_vcard_info_backup_pkey; Type: CONSTRAINT; Schema: public; Owner: ejabberd
---
-
-ALTER TABLE ONLY public.muc_vcard_info_backup
-    ADD CONSTRAINT muc_vcard_info_backup_pkey PRIMARY KEY (muc_name);
-
 
 --
 -- TOC entry 4287 (class 2606 OID 18269)
