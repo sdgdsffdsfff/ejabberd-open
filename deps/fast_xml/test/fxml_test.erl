@@ -5,7 +5,7 @@
 %%% Created : 17 Dec 2013 by Evgeny Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% Copyright (C) 2002-2016 ProcessOne, SARL. All Rights Reserved.
+%%% Copyright (C) 2002-2019 ProcessOne, SARL. All Rights Reserved.
 %%%
 %%% Licensed under the Apache License, Version 2.0 (the "License");
 %%% you may not use this file except in compliance with the License.
@@ -39,7 +39,8 @@ close(State) ->
     ?assertEqual(true, fxml_stream:close(State)).
 
 start_test() ->
-    ?assertEqual(ok, application:start(fast_xml)).
+    ?assertEqual(ok, fxml:load_nif(p1_nif_utils:get_so_path(fxml, [], "fxml"))),
+    ?assertEqual(ok, fxml_stream:load_nif(p1_nif_utils:get_so_path(fxml_stream, [], "fxml_stream"))).
 
 tag_test() ->
     ?assertEqual(#xmlel{name = <<"root">>},
@@ -120,7 +121,9 @@ receiver(Acc) ->
 	    receiver([Msg|Acc]);
 	{get, Parent} ->
 	    Parent ! lists:reverse(Acc),
-	    receiver([])
+	    receiver([]);
+	{close, Parent} ->
+	    Parent ! closed
     end.
 
 collect_events(Pid) ->
@@ -129,6 +132,30 @@ collect_events(Pid) ->
 	Events ->
 	    Events
     end.
+
+close_collector(Pid) ->
+    Pid ! {close, self()},
+    receive
+	closed ->
+	    closed
+    end.
+
+parser_loop(TestData) ->
+		parser_loop(infinity, [], TestData).
+
+parser_loop(MaxSize, Options, TestData) ->
+    CollectorPid = spawn_link(fun() -> receiver([]) end),
+    parser_loop_int(TestData, fxml_stream:new(CollectorPid, MaxSize, Options), CollectorPid).
+
+parser_loop_int([reset | Tail], Handle, CollectorPid) ->
+    parser_loop_int(Tail, fxml_stream:reset(Handle), CollectorPid);
+parser_loop_int([{Input, Output} | Tail], Handle, CollectorPid) ->
+    NHandle = fxml_stream:parse(Handle, Input),
+    ?assertEqual(Output, collect_events(CollectorPid)),
+    parser_loop_int(Tail, NHandle, CollectorPid);
+parser_loop_int([], Handle, CollectorPid) ->
+    close(Handle),
+    close_collector(CollectorPid).
 
 stream_test() ->
     CallbackPid = spawn_link(fun() -> receiver([]) end),
@@ -194,19 +221,16 @@ stream_normalized_ns_test() ->
        collect_events(CallbackPid)).
 
 stream_reset_test() ->
-    CallbackPid = spawn_link(fun() -> receiver([]) end),
-    S0 = new(CallbackPid),
-    S1 = fxml_stream:parse(S0, <<"<a xmlns='ns1'><b/>">>),
-    S2 = fxml_stream:reset(S1),
-    S3 = fxml_stream:parse(S2, <<"<a><b/></a>">>),
-    close(S3),
-    ?assertEqual(
-       [{xmlstreamstart, <<"a">>, [{<<"xmlns">>, <<"ns1">>}]},
-	{xmlstreamelement, #xmlel{name = <<"b">>}},
-        {xmlstreamstart, <<"a">>, []},
-	{xmlstreamelement, #xmlel{name = <<"b">>}},
-	{xmlstreamend, <<"a">>}],
-       collect_events(CallbackPid)).
+    parser_loop([{<<"<a xmlns='ns1'><b/>">>,
+		  [{xmlstreamstart, <<"a">>, [{<<"xmlns">>, <<"ns1">>}]},
+		   {xmlstreamelement, #xmlel{name = <<"b">>}}]},
+		 reset,
+		 {<<"<a><b/></a>">>,
+		  [{xmlstreamstart, <<"a">>, []},
+		   {xmlstreamelement, #xmlel{name = <<"b">>}},
+		   {xmlstreamend, <<"a">>}]}
+		]).
+
 stream_error_test() ->
     CallbackPid = spawn_link(fun() -> receiver([]) end),
     S0 = new(CallbackPid),
@@ -256,6 +280,100 @@ splitted_stream_test() ->
     ?assertEqual([{xmlstreamend, <<"root">>}], collect_events(CallbackPid)),
     close(Stream6).
 
+map_stream_test() ->
+	parser_loop(infinity, [use_maps], [
+		{<<"<a xmlns='ns1'><b/>">>,
+			[#{'__struct__' => 'Elixir.FastXML.StreamStart',
+                        attrs => #{},
+                        name => <<"a">>},
+                      #{'__struct__' => 'Elixir.FastXML.El',
+                        attrs => #{},
+                        children => [],
+                        name => <<"b">>}]},
+			reset,
+			{<<"<a><b c='1'/></a>">>,
+				[#{'__struct__' => 'Elixir.FastXML.StreamStart',
+                        attrs => #{},
+                        name => <<"a">>},
+                      #{'__struct__' => 'Elixir.FastXML.El',
+                        attrs => #{<<"c">> => <<"1">>},
+                        children => [],
+                        name => <<"b">>},
+                      #{'__struct__' => 'Elixir.FastXML.StreamEnd',
+                        name => <<"a">>}]}
+	]).
+
+streaming_mismatched_tags_error_test() ->
+    parser_loop([{<<"<root">>, []},
+		 {<<"><a>">>, [{xmlstreamstart, <<"root">>, []}]},
+		 {<<"</a><b/><c attr=">>,
+		  [{xmlstreamelement, #xmlel{name = <<"a">>}},
+		   {xmlstreamelement, #xmlel{name = <<"b">>}}]},
+		 {<<"'1'></c>">>,
+		  [{xmlstreamelement, #xmlel{name = <<"c">>,
+					     attrs = [{<<"attr">>, <<"1">>}]}}]},
+		 {<<"<z><a><b><d/></q><a/>">>,
+		  [{xmlstreamerror,{7,<<"mismatched tag">>}}]}
+		]).
+
+streaming_invalid_attribute_error_test() ->
+	parser_loop([{<<"<root">>, []},
+		{<<"><a>">>, [{xmlstreamstart, <<"root">>, []}]},
+		{<<"</a><b/><c attr=">>,
+			[{xmlstreamelement, #xmlel{name = <<"a">>}},
+				{xmlstreamelement, #xmlel{name = <<"b">>}}]},
+		{<<"'1><d/></c>">>,
+			[{xmlstreamerror,{4,<<"not well-formed (invalid token)">>}}]}
+	]).
+
+xmpp_stream_test() ->
+    parser_loop([{<<"<?xml version='1.0'?>",
+		    "<stream:stream to='server.com' ",
+		    "version='1.0' xmlns:stream='http://etherx.jabber.org/streams' ",
+		    "xml:lang='pl' >">>,
+		  [{xmlstreamstart,<<"stream:stream">>,
+		    [{<<"xmlns:stream">>,<<"http://etherx.jabber.org/streams">>},
+		     {<<"to">>,<<"server.com">>},
+		     {<<"version">>,<<"1.0">>},
+		     {<<"xml:lang">>, <<"pl">>}]}]},
+		 {<<"<stream:features>",
+		    "<register xmlns='http://jabber.org/features/iq-register'/>",
+		    "</stream:features>">>,
+		  [{xmlstreamelement,
+		    {xmlel,<<"stream:features">>,
+		     [],
+		     [{xmlel,<<"register">>,
+		       [{<<"xmlns">>,<<"http://jabber.org/features/iq-register">>}],
+		       []}]}}]},
+		 {<<"<a:a xmlns:a='b'><a:c/></a:a>">>,
+		  [{xmlstreamelement,
+		    {xmlel,<<"a">>,
+		     [{<<"xmlns">>,<<"b">>}, {<<"xmlns:a">>,<<"b">>}],
+		     [{xmlel,<<"c">>,[], []}]}}]},
+		 reset,
+		 {<<"<?xml version='1.0'?>",
+		    "<stream:stream xmlns='jabber:client' to='server.com' ",
+		    "version='1.0' xmlns:stream='http://etherx.jabber.org/streams' ",
+		    "xml:lang='pl' >">>,
+		  [{xmlstreamstart,<<"stream:stream">>,
+		    [{<<"xmlns">>,<<"jabber:client">>},
+		     {<<"xmlns:stream">>,<<"http://etherx.jabber.org/streams">>},
+		     {<<"to">>,<<"server.com">>},
+		     {<<"version">>,<<"1.0">>},
+		     {<<"xml:lang">>, <<"pl">>}]}]},
+			reset,
+			{<<"<?xml version='1.0'?>",
+				"<stream:stream to='server.com' ",
+				"version='1.0' xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:client' ",
+				"xml:lang='pl' >">>,
+				[{xmlstreamstart, <<"stream:stream">>,
+					[{<<"xmlns:stream">>, <<"http://etherx.jabber.org/streams">>},
+						{<<"xmlns">>, <<"jabber:client">>},
+						{<<"to">>, <<"server.com">>},
+						{<<"version">>, <<"1.0">>},
+						{<<"xml:lang">>, <<"pl">>}]}]}
+		]).
+
 too_big_test() ->
     CallbackPid = spawn_link(fun() -> receiver([]) end),
     Stream0 = new(CallbackPid, 5),
@@ -269,6 +387,29 @@ too_big_test() ->
 		  {xmlstreamerror, <<"XML stanza is too big">>}],
 		 collect_events(CallbackPid)),
     close(Stream4).
+
+too_big_with_data_after_test() ->
+    parser_loop(30, [],
+		[{
+		   <<"<start>">>,
+		   [{xmlstreamstart, <<"start">>, []}]
+		 },
+		 {
+		   <<"<foo><a t='1' ">>,
+		   []
+		 },
+		 {
+		   <<"<1234567890123456790123456789012345678901234567890/>">>,
+		   [{xmlstreamerror, <<"XML stanza is too big">>}]
+		 },
+		 {
+		   <<"z='1'/>">>,
+		   [{xmlstreamerror, <<"XML stanza is too big">>}]
+		 },
+		 {
+		   <<"</foo></start>">>,
+		   [{xmlstreamerror, <<"XML stanza is too big">>}]
+		 }]).
 
 close_close_test() ->
     Stream = new(),
@@ -396,6 +537,53 @@ billionlaughs_test() ->
     close(Stream1),
     ?assertMatch([{xmlstreamerror, _}], collect_events(CallbackPid)).
 
+element_to_binary_entities_test() ->
+    S = <<"<a b='a&#x9;&#xA;&#xD;&lt;>&amp;&quot;&apos;b'>a&lt;&gt;&amp;&quot;&apos;b</a>">>,
+    E = #xmlel{name = <<"a">>,
+	       attrs = [{<<"b">>, <<"a\t\n\r<>&\"'b">>}],
+	       children = [{xmlcdata, <<"a<>&\"'b">>}]},
+    R = fxml:element_to_binary(E),
+    ?assertEqual(S, R),
+    ?assertEqual(E, fxml_stream:parse_element(R)).
+
+element_to_binary_resize_test() ->
+    A = #xmlel{
+	   name = <<"a">>,
+	   children = [{xmlcdata, <<"1234567890123456790123456789012345678901234567890">>}]
+	  },
+
+    ?assertEqual(
+       <<"<t>",
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "<a>1234567890123456790123456789012345678901234567890</a>"
+	 "</t>"
+       >>,
+       fxml:element_to_binary(
+	 #xmlel{name = <<"t">>,
+		children = [A, A, A, A, A,
+			    A, A, A, A, A,
+			    A, A, A, A, A,
+			    A, A, A, A, A]
+	       })).
+
 element_to_binary_test() ->
     ?assertEqual(
        <<"<iq from='hag66@shakespeare.lit/pda' id='ik3vs715' "
@@ -411,6 +599,23 @@ element_to_binary_test() ->
 				   attrs = [{<<"xmlns">>,
 					     <<"http://jabber.org/protocol/disco#info">>}],
 				   children = []}]})).
+
+element_to_header_test() ->
+    ?assertEqual(
+       <<"<?xml version='1.0'?><stream:stream "
+	 "xmlns:stream='http://etherx.jabber.org/streams' "
+	 "xmlns='jabber:server' xmlns:db='jabber:server:dialback' "
+	 "id='4774242664715222330' version='1.0'>">>,
+       fxml:element_to_header(
+	 #xmlel{name = <<"stream:stream">>,
+		attrs = [{<<"xmlns:stream">>,<<"http://etherx.jabber.org/streams">>},
+			 {<<"xmlns">>,<<"jabber:server">>},
+			 {<<"xmlns:db">>,<<"jabber:server:dialback">>},
+			 {<<"id">>,<<"4774242664715222330">>},
+			 {<<"version">>,<<"1.0">>}]})).
+
+element_to_header_xmlcdata_test() ->
+    ?assertError(badarg, fxml:element_to_header({xmlcdata, <<"">>})).
 
 crypt_test() ->
     ?assertEqual(
@@ -860,6 +1065,3 @@ rpc_empty_response_test() ->
     Result = {response, []},
     ?assertEqual({ok, Result}, fxmlrpc:decode(Response)),
     ?assertEqual(Response, fxmlrpc:encode(Result)).
-
-application_stop_test() ->
-    ?assertEqual(ok, application:stop(fast_xml)).

@@ -5,7 +5,7 @@
 %%% Created : 22 Jun 2009 by Evgeniy Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% Copyright (C) 2002-2016 ProcessOne, SARL. All Rights Reserved.
+%%% Copyright (C) 2002-2019 ProcessOne, SARL. All Rights Reserved.
 %%%
 %%% Licensed under the Apache License, Version 2.0 (the "License");
 %%% you may not use this file except in compliance with the License.
@@ -28,10 +28,11 @@
 %% Generator API
 -export([compile/1, compile/2]).
 %% Runtime API
--export([format_error/1, get_attr/2]).
+-export([format_error/1, io_format_error/1, get_attr/3]).
 %% Runtime built-in decoders/encoders
--export([dec_int/1, dec_int/3, dec_enum/2,
-         enc_int/1, enc_enum/1, not_empty/1]).
+-export([dec_int/1, dec_int/3, dec_enum/2, enc_int/1, enc_enum/1, not_empty/1,
+	enc_xmlns_attrs/2, choose_top_xmlns/3,
+	 register_module/2, unregister_module/2, recompile_resolver/2]).
 
 -include("fxml_gen.hrl").
 -include("fxml.hrl").
@@ -56,23 +57,59 @@ compile(Path, Opts) ->
         ok ->
             ok;
         Err ->
-            io:format("compile failed: ~p~n", [Err]),
+            io:format("failed to compile ~p: ~p~n", [Path, Err]),
             Err
     end.
 
 do_compile(Path, Opts) ->
-    case consult(Path) of
-        {ok, Terms, Forms} ->
-            Elems = lists:flatmap(
-                      fun({Tag, Elem}) when is_atom(Tag),
-                                            is_record(Elem, elem) ->
-                              [{Tag, Elem}];
-                         (_) ->
-                              []
-                      end, Terms),
-            compile(Elems, Forms, Path, Opts);
+    case get_files_from_predefined_dir() of
+	{ok, Files} ->
+	    case lists:foldr(
+		   fun(_, {error, _} = Err) ->
+			   Err;
+		      (File, {AccTs, AccFs}) ->
+			   case consult(File) of
+			       {ok, Ts, Fs} ->
+				   {Ts ++ AccTs, Fs ++ AccFs};
+			       Err ->
+				   Err
+			   end
+		   end, {[], []}, [Path|Files]) of
+		{error, Why} ->
+		    {error, Why};
+		{Terms, Forms} ->
+		    Elems = lists:flatmap(
+			      fun({Tag, Elem}) when is_atom(Tag),
+						    is_record(Elem, elem) ->
+				      [{Tag, Elem}];
+				 (_) ->
+				      []
+			      end, Terms),
+		    compile(Elems, Forms, Path, Opts)
+	    end;
         Err ->
             Err
+    end.
+
+get_files_from_predefined_dir() ->
+    case os:getenv("FXML_GEN_DIR") of
+	false ->
+	    {ok, []};
+	Dir ->
+	    case file:list_dir(Dir) of
+		{ok, Files} ->
+		    {ok, lists:flatmap(
+			   fun(File) ->
+				   case filename:extension(File) of
+				       ".spec" ->
+					   [filename:join(Dir, File)];
+				       _ ->
+					   []
+				   end
+			   end, Files)};
+		{error, _} = Err ->
+		    Err
+	    end
     end.
 
 %%====================================================================
@@ -84,7 +121,7 @@ dec_int(Val) ->
     dec_int(Val, infinity, infinity).
 
 dec_int(Val, Min, Max) ->
-    case list_to_integer(binary_to_list(Val)) of
+    case erlang:binary_to_integer(Val) of
         Int when Int =< Max, Min == infinity ->
             Int;
         Int when Int =< Max, Int >= Min ->
@@ -94,7 +131,7 @@ dec_int(Val, Min, Max) ->
 -spec enc_int(integer()) -> binary().
 
 enc_int(Int) ->
-    list_to_binary(integer_to_list(Int)).
+    erlang:integer_to_binary(Int).
 
 -spec dec_enum(binary(), [atom()]) -> atom().
 
@@ -115,6 +152,9 @@ enc_enum(Atom) ->
 not_empty(<<_, _/binary>> = Val) ->
     Val.
 
+%%====================================================================
+%% Runtime builtins
+%%====================================================================
 format_error({bad_attr_value, Attr, Tag, XMLNS}) ->
     <<"Bad value of attribute '", Attr/binary,
       "' in tag <", Tag/binary, "/> qualified by namespace '",
@@ -134,27 +174,171 @@ format_error({missing_cdata, <<>>, Tag, XMLNS}) ->
       "/> qualified by namespace '", XMLNS/binary, "'">>;
 format_error({unknown_tag, Tag, XMLNS}) ->
     <<"Unknown tag <", Tag/binary,
-      "/> qualified by namespace '", XMLNS/binary, "'">>.
+      "/> qualified by namespace '", XMLNS/binary, "'">>;
+format_error({missing_tag_xmlns, Tag}) ->
+    <<"Missing namespace for tag <", Tag/binary, "/>">>.
 
-get_attr(Attr, Attrs) ->
+io_format_error({bad_attr_value, Attr, Tag, XMLNS}) ->
+    {<<"Bad value of attribute '~s' in tag <~s/> qualified by namespace '~s'">>,
+     [Attr, Tag, XMLNS]};
+io_format_error({bad_cdata_value, <<>>, Tag, XMLNS}) ->
+    {<<"Bad value of cdata in tag <~s/> qualified by namespace '~s'">>,
+     [Tag, XMLNS]};
+io_format_error({missing_tag, Tag, XMLNS}) ->
+    {<<"Missing tag <~s/> qualified by namespace '~s'">>, [Tag, XMLNS]};
+io_format_error({missing_attr, Attr, Tag, XMLNS}) ->
+    {<<"Missing attribute '~s' in tag <~s/> qualified by namespace '~s'">>,
+     [Attr, Tag, XMLNS]};
+io_format_error({missing_cdata, <<>>, Tag, XMLNS}) ->
+    {<<"Missing cdata in tag <~s/> qualified by namespace '~s'">>,
+     [Tag, XMLNS]};
+io_format_error({unknown_tag, Tag, XMLNS}) ->
+    {<<"Unknown tag <~s/> qualified by namespace '~s'">>, [Tag, XMLNS]};
+io_format_error({missing_tag_xmlns, Tag}) ->
+    {<<"Missing namespace for tag <~s/>">>, [Tag]}.
+
+get_attr(Attr, Attrs, Default) ->
     case lists:keyfind(Attr, 1, Attrs) of
         {_, Val} -> Val;
-        false -> <<>>
+        false -> Default
     end.
+
+enc_xmlns_attrs(XMLNS, XMLNS) -> [];
+enc_xmlns_attrs(XMLNS, _) -> [{<<"xmlns">>, XMLNS}].
+
+choose_top_xmlns(<<>>, NSList, TopXMLNS) ->
+    case lists:member(TopXMLNS, NSList) of
+	true -> TopXMLNS;
+	false -> hd(NSList)
+    end;
+choose_top_xmlns(XMLNS, _, _) ->
+    XMLNS.
+
+register_module(Mod, ResolverMod) ->
+    MD5Sum = try Mod:module_info(md5) of
+		 Val -> Val
+	     catch error:badarg ->
+		     %% 'md5' attribute is relatively new,
+		     %% calculate md5sum using beam_lib for
+		     %% older OTP
+		     {ok, {Mod, Val}} = beam_lib:md5(code:which(Mod)),
+		     Val
+	     end,
+    case orddict:find(Mod, ResolverMod:modules()) of
+	{ok, MD5Sum} ->
+	    ok;
+	_ ->
+	    Mods = orddict:store(Mod, MD5Sum, ResolverMod:modules()),
+	    recompile_resolver(Mods, ResolverMod)
+    end.
+
+unregister_module(Mod, ResolverMod) ->
+    case orddict:find(Mod, ResolverMod:modules()) of
+	{ok, _} ->
+	    Mods = orddict:erase(Mod, ResolverMod:modules()),
+	    recompile_resolver(Mods, ResolverMod);
+	error ->
+	    ok
+    end.
+
+%% We don't use erl_syntax here in order not to depend
+%% on syntax_tools in runtime
+recompile_resolver(Mods, ResolverMod) ->
+    Tags = lists:flatmap(
+	     fun(M) ->
+		     [{Name, XMLNS, M} || {Name, XMLNS} <- M:tags()]
+	     end, orddict:fetch_keys(Mods)),
+    Records = lists:flatmap(
+		fun(M) ->
+			[{RecName, RecSize, M}
+			 || {RecName, RecSize} <- M:records()]
+		end, orddict:fetch_keys(Mods)),
+    Lookup1 = string:join(
+		lists:map(
+		  fun({RecName, RecSize, M}) ->
+			  io_lib:format(
+			    "lookup({~s}) -> '~s'",
+			    [string:join(
+			       [io_lib:format("'~s'", [RecName]) |
+				["_" || _ <- lists:seq(1, RecSize)]],
+			       ","), M])
+		  end, Records) ++ ["lookup(_) -> undefined."],
+		";" ++ io_lib:nl()),
+    Lookup2 = string:join(
+		lists:map(
+		  fun({Name, XMLNS, M}) ->
+			  io_lib:format("lookup(~w, ~w) -> '~s'",
+					[Name, XMLNS, M])
+		  end, Tags) ++ ["lookup(_, _) -> undefined."],
+		";" ++ io_lib:nl()),
+    Modules = io_lib:format(
+		"modules() -> [~s].",
+		[string:join(
+		   [io_lib:format(
+		      "{'~s', ~w}", [M, S])
+		    || {M, S} <- Mods], ",")]),
+    Module = io_lib:format("-module(~s).", [ResolverMod]),
+    Compile = "-compile(export_all).",
+    Forms = lists:map(
+	      fun(Expr) ->
+		      {ok, Tokens, _} = erl_scan:string(lists:flatten(Expr)),
+		      {ok, Form} = erl_parse:parse_form(Tokens),
+		      Form
+	      end, [Module, Compile, Modules, Lookup1, Lookup2]),
+    {ok, Code} = case compile:forms(Forms, []) of
+		     {ok, ResolverMod, Bin} ->
+			 {ok, Bin};
+		     {ok, ResolverMod, Bin, _Warnings} ->
+			 {ok, Bin};
+		     Error ->
+			 Error
+		 end,
+    {module, ResolverMod} = code:load_binary(ResolverMod, "nofile", Code),
+    ok.
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
-compile(TaggedElems, Forms, Path, Opts) ->
-    KnownFuns = lists:flatmap(
-                  fun(F) ->
-                          case erl_syntax:type(F) of
-                              function ->
-                                  [erl_syntax_lib:analyze_function(F)];
-                              _ ->
-                                  []
-                          end
-                  end, Forms),
+compile(TaggedElems0, Forms, Path, Opts) ->
+    FileName = filename:basename(Path),
+    ModName = list_to_atom(filename:rootname(FileName)),
+    ModNameHrl = filename:rootname(FileName) ++ ".hrl",
+    DirName = filename:dirname(Path),
+    ErlDirName = proplists:get_value(erl_dir, Opts, DirName),
+    HrlDirName = proplists:get_value(hrl_dir, Opts, DirName),
+    {AttrForms, RestForms} = lists:partition(
+			       fun(Form) ->
+				       erl_syntax:type(Form) == attribute
+			       end, Forms),
+    FunForms = lists:foldl(
+		 fun(F, Acc) ->
+			 case erl_syntax:type(F) of
+			     function ->
+				 [F|Acc];
+			     _ ->
+				 Acc
+			 end
+		 end, make_builtin_codec_funs(), RestForms),
+    KnownFuns = [erl_syntax_lib:analyze_function(F) || F <- FunForms],
+    FunSpecs = lists:foldl(
+		 fun(Form, D) ->
+			 case erl_syntax_lib:analyze_attribute(Form) of
+			     {spec, _} ->
+				 case get_fun_spec(erl_syntax:revert(Form)) of
+				     {Key, Value} ->
+					 dict:store(Key, Value, D);
+				     _ ->
+					 D
+				 end;
+			     _ ->
+				 D
+			 end
+		 end, dict:new(), AttrForms),
+    TaggedElems = lists:map(
+		    fun({Tag, Elem}) ->
+			    {Tag, prepare_elem(Elem, KnownFuns, FunSpecs,
+					       TaggedElems0, ModName, Opts)}
+		    end, TaggedElems0),
     Dups = get_dups([Tag || {Tag, _} <- TaggedElems]),
     if Dups /= [] ->
             bad_spec({duplicated_elem_specs, Dups});
@@ -168,91 +352,142 @@ compile(TaggedElems, Forms, Path, Opts) ->
        true ->
             ok
     end,
-    FileName = filename:basename(Path),
-    ModName = list_to_atom(filename:rootname(FileName)),
-    ModNameErl = filename:rootname(FileName) ++ ".erl",
-    ModNameHrl = filename:rootname(FileName) ++ ".hrl",
-    DirName = filename:dirname(Path),
-    ErlDirName = proplists:get_value(erl_dir, Opts, DirName),
-    HrlDirName = proplists:get_value(hrl_dir, Opts, DirName),
-    Types = get_types(TaggedElems),
-    AST = lists:flatmap(
-            fun({Tag, Elem}) ->
-                    Elem1 = prepare_elem(Elem, KnownFuns, TaggedElems, Opts),
-                    elem_to_AST(Elem1, Tag, TaggedElems, Types, ModName, Opts)
-            end, TaggedElems),
-    Module = erl_syntax:attribute(
-               ?AST(module),
-               [erl_syntax:atom(ModName)]),
-    Decoders = make_top_decoders(TaggedElems, ModName, Opts),
-    Encoders = make_top_encoders(TaggedElems, Opts),
-    AuxFuns = make_aux_funs(),
-    {AttrForms, FunForms} = lists:partition(
-			      fun(Form) ->
-				      erl_syntax:type(Form) == attribute
-			      end, Forms),
+    Types = get_types(TaggedElems, FunSpecs, Opts),
     RawAttributes = lists:flatmap(
 		      fun(Form) ->
-			      erl_syntax:get_ann(Form)
+			      case erl_syntax_lib:analyze_attribute(Form) of
+				  {spec, _} ->
+				      [];
+				  _ ->
+				      erl_syntax:get_ann(Form)
+			      end
 		      end, lists:reverse(AttrForms)),
     PredefRecords = get_predefined_records(AttrForms),
-    Printer = make_printer(TaggedElems, PredefRecords),
-    NewAST = Decoders ++ Encoders ++ AuxFuns ++
-        Printer ++ FunForms ++ AST,
-    Records = make_records(Types, TaggedElems, PredefRecords, Opts),
+    ASTs = lists:foldl(
+	     fun({Tag, Elem}, Acc) ->
+		     dict:append_list(
+		       Elem#elem.module,
+		       elem_to_AST(Elem, Tag, TaggedElems, Types,
+				   ModName, PredefRecords, Opts),
+		       Acc)
+	     end, dict:from_list([{ModName, []}]), TaggedElems),
+    Records = make_records(Types, TaggedElems, PredefRecords, FunSpecs, Opts),
     TypeSpecs = make_typespecs(ModName, Types, Opts),
-    Exports = erl_syntax:attribute(
-                ?AST(export),
-                [erl_syntax:list(
-                   lists:map(
-                     fun({FN, Arity}) ->
-                             erl_syntax:arity_qualifier(
-                               erl_syntax:atom(FN),
-                               erl_syntax:integer(Arity));
-                        (F) ->
-                             {FN, Arity} = erl_syntax_lib:analyze_function(F),
-                             erl_syntax:arity_qualifier(
-                               erl_syntax:atom(FN),
-                               erl_syntax:integer(Arity))
-                     end, [hd(Printer), {format_error, 1}
-                           |Decoders ++ Encoders]))]),
-    Compile = erl_syntax:attribute(
-                ?AST(compile),
-                [?AST(
-                   {nowarn_unused_function,
-                    [{dec_int, 3},
-                     {dec_int, 1},
-                     {dec_enum, 2},
-                     {enc_int, 1},
-                     {get_attr, 2},
-                     {enc_enum, 1}]})]),
     Hdr = header(FileName),
-    ResultAST = erl_syntax:form_list([Hdr, Module, Compile, Exports|NewAST]),
-    case file:write_file(
-           filename:join([ErlDirName, ModNameErl]),
-           [erl_prettypr:format(ResultAST), io_lib:nl()]) of
+    FunDeps = build_fun_deps(FunForms),
+    case write_modules(ASTs, ModName, FunDeps, ErlDirName,
+		       FileName, TaggedElems, PredefRecords) of
         ok ->
-            file:write_file(
-              filename:join([HrlDirName, ModNameHrl]),
-              [erl_prettypr:format(Hdr),
-	       RawAttributes,
-	       io_lib:nl(),
-               string:join(Records, io_lib:nl() ++ io_lib:nl()),
-	       io_lib:nl(),
-	       io_lib:nl(),
-	       TypeSpecs,
-               io_lib:nl()]);
+	    case write_resolver(TaggedElems, ModName, ErlDirName, FileName) of
+		ok ->
+		    io:format("Generating ~s~n", [ModNameHrl]),
+		    file:write_file(
+		      filename:join([HrlDirName, ModNameHrl]),
+		      [erl_prettypr:format(Hdr),
+		       RawAttributes,
+		       io_lib:nl(),
+		       string:join(Records, io_lib:nl() ++ io_lib:nl()),
+		       io_lib:nl(),
+		       io_lib:nl(),
+		       TypeSpecs,
+		       io_lib:nl()]);
+		Err ->
+		    Err
+	    end;
         Err ->
             Err
     end.
+
+write_modules(ASTs, ModName, FunDeps, ErlDirName,
+	      FileName, TaggedElems, PredefRecords) ->
+    dict:fold(
+      fun(_, _, {error, _} = Err) ->
+	      Err;
+	 (Mod, AST, ok) ->
+	      write_module(ModName, Mod, AST, FunDeps, ErlDirName,
+			   FileName, TaggedElems, PredefRecords)
+      end, ok, ASTs).
+
+write_module(ModName, ModName, AST, FunDeps, ErlDirName,
+	     SpecFile, TaggedElems, PredefRecords) ->
+    ModNameErl = atom_to_list(ModName) ++ ".erl",
+    io:format("Generating ~s~n", [ModNameErl]),
+    Module = erl_syntax:attribute(
+               ?AST(module),
+               [erl_syntax:atom(ModName)]),
+    TopDecoders = make_top_decoders(TaggedElems, ModName),
+    TopEncoders = make_top_encoders(TaggedElems, ModName),
+    Registrar = make_registrar(ModName),
+    Decoders = make_decoders(TaggedElems, ModName, ModName),
+    Encoders = make_encoders(TaggedElems, ModName),
+    Printer = make_printer(TaggedElems, PredefRecords, ModName, ModName),
+    GettersSetters = make_getters_setters(TaggedElems, PredefRecords, ModName),
+    Resolver = make_resolver(TaggedElems, ModName),
+    AuxFuns = make_aux_funs(),
+    LocalFunForms = make_local_funs(FunDeps, TaggedElems, ModName),
+    NewAST = TopDecoders ++ TopEncoders ++ Decoders ++ Encoders ++
+	GettersSetters ++ Registrar ++ AuxFuns ++ LocalFunForms ++ Printer ++ Resolver ++ AST,
+    Compile = erl_syntax:attribute(?AST(compile), [?AST(export_all)]),
+    Hdr = header(SpecFile),
+    ResultAST = erl_syntax:form_list([Hdr, Module, Compile|NewAST]),
+    file:write_file(
+      filename:join([ErlDirName, ModNameErl]),
+      [erl_prettypr:format(ResultAST), io_lib:nl()]);
+write_module(ParentMod, ModName, AST, FunDeps, ErlDirName,
+	     SpecFile, TaggedElems, PredefRecords) ->
+    ModNameErl = atom_to_list(ModName) ++ ".erl",
+    io:format("Generating ~s~n", [ModNameErl]),
+    Hdr = header(SpecFile),
+    Module = erl_syntax:attribute(
+               ?AST(module),
+               [erl_syntax:atom(ModName)]),
+    Decoders = make_decoders(TaggedElems, ParentMod, ModName),
+    Encoders = make_encoders(TaggedElems, ModName),
+    Printer = make_printer(TaggedElems, PredefRecords, ModName, ParentMod),
+    GettersSetters = make_getters_setters(TaggedElems, PredefRecords, ModName),
+    Compile = erl_syntax:attribute(?AST(compile), [?AST(export_all)]),
+    LocalFunForms = make_local_funs(FunDeps, TaggedElems, ModName),
+    NewAST = Decoders ++ Encoders ++ GettersSetters ++ Printer ++ LocalFunForms ++ AST,
+    ResultAST = erl_syntax:form_list([Hdr, Module, Compile|NewAST]),
+    file:write_file(
+      filename:join([ErlDirName, ModNameErl]),
+      [erl_prettypr:format(ResultAST), io_lib:nl()]).
+
+write_resolver(_TaggedElems, ParentMod, ErlDirName, SpecFile) ->
+    ModName = resolver_mod(ParentMod),
+    ModNameErl = atom_to_list(ModName) ++ ".erl",
+    io:format("Generating ~s~n", [ModNameErl]),
+    Hdr = header(SpecFile),
+    Module = erl_syntax:attribute(
+               ?AST(module),
+               [erl_syntax:atom(ModName)]),
+    Compile = erl_syntax:attribute(?AST(compile), [?AST(export_all)]),
+    AST = [make_function(modules, [], [?AST([])]),
+	   make_function(lookup, [?AST(_), ?AST(_)], [?AST(undefined)]),
+	   make_function(lookup, [?AST(_)], [?AST(undefined)])],
+    ResultAST = erl_syntax:form_list([Hdr, Module, Compile|AST]),
+    file:write_file(
+      filename:join([ErlDirName, ModNameErl]),
+      [erl_prettypr:format(ResultAST), io_lib:nl()]).
+
+get_fun_spec({attribute, _, spec, {MFA, Args}}) ->
+    Spec = case [Range || {type, _, 'fun', [_, Range]} <- Args] of
+	       [] -> {type, 0, any, []};
+	       [T] -> T;
+	       Ts -> {type, 0, union, Ts}
+	   end,
+    {MFA, Spec}.
 
 get_predefined_records(AttrForms) ->
     lists:foldl(
       fun(F, Acc) ->
 	      case erl_syntax_lib:analyze_attribute(F) of
 		  {record, {RecName, RecAttrs}} ->
-		      Fields = [Field || {Field, _} <- RecAttrs],
-		      dict:store(RecName, Fields, Acc);
+		      RecAttrs1 = lists:map(
+				    fun({Attr, {Default, _}}) -> {Attr, Default};
+				       ({Attr, Default}) -> {Attr, Default}
+				    end, RecAttrs),
+		      dict:store(RecName, RecAttrs1, Acc);
 		  _ ->
 		      Acc
 	      end
@@ -261,16 +496,17 @@ get_predefined_records(AttrForms) ->
 make_aux_funs() ->
     case get_abstract_code_from_myself() of
         {ok, AbsCode} ->
-            lists:filter(
-              fun(T) ->
+	    lists:filter(
+	      fun(T) ->
                       case catch erl_syntax_lib:analyze_function(T) of
                           {format_error, 1} -> true;
-                          {dec_int, 3} -> true;
-                          {dec_int, 1} -> true;
-                          {dec_enum, 2} -> true;
-                          {enc_int, 1} -> true;
-                          {enc_enum, 1} -> true;
-                          {get_attr, 2} -> true;
+			  {io_format_error, 1} -> true;
+			  {get_attr, 3} -> true;
+			  {choose_top_xmlns, 3} -> true;
+			  {enc_xmlns_attrs, 2} -> true;
+			  {register_module, 2} -> true;
+			  {unregister_module, 2} -> true;
+			  {recompile_resolver, 2} -> true;
                           _ -> false
                       end
               end, AbsCode);
@@ -278,7 +514,82 @@ make_aux_funs() ->
             erlang:error({no_abstract_code_found, ?MODULE})
     end.
 
-make_records({Tags, TypesDict, RecDict}, TaggedElems, PredefRecords, Opts) ->
+make_builtin_codec_funs() ->
+    case get_abstract_code_from_myself() of
+        {ok, AbsCode} ->
+	    lists:filter(
+	      fun(T) ->
+                      case catch erl_syntax_lib:analyze_function(T) of
+                          {dec_int, 3} -> true;
+                          {dec_int, 1} -> true;
+                          {dec_enum, 2} -> true;
+                          {enc_int, 1} -> true;
+                          {enc_enum, 1} -> true;
+                          _ -> false
+                      end
+              end, AbsCode);
+        error ->
+            erlang:error({no_abstract_code_found, ?MODULE})
+    end.
+
+build_fun_deps(FunForms) ->
+    G = digraph:new([acyclic]),
+    lists:foreach(
+      fun(FunForm) ->
+	      Fun = erl_syntax_lib:analyze_function(FunForm),
+	      digraph:add_vertex(G, Fun, FunForm),
+	      erl_syntax_lib:map(
+		fun(Form) ->
+			try erl_syntax_lib:analyze_application(Form) of
+			    {_, Arity} = SubFun when is_integer(Arity) ->
+				case digraph:vertex(G, SubFun) of
+				    false -> digraph:add_vertex(G, SubFun);
+				    _ -> ok
+				end,
+				digraph:add_edge(G, Fun, SubFun);
+			    _ ->
+				ok
+			catch _:_ ->
+				ok
+			end,
+			Form
+		end, FunForm)
+      end, FunForms),
+    G.
+
+make_local_funs(FunDeps, TaggedElems, ModName) ->
+    CodecFuns = lists:flatmap(
+		  fun({_, #elem{attrs = Attrs, cdata = CData, module = M}})
+			when M == ModName ->
+			  [CData#cdata.enc, CData#cdata.dec|
+			   lists:flatmap(
+			     fun(#attr{enc = Enc, dec = Dec}) ->
+				     [Enc,Dec]
+			     end, Attrs)];
+		     ({_, _}) ->
+			  []
+		  end, TaggedElems),
+    LocalFuns = lists:usort([{Name, length(Arity)+1} || {Name, Arity} <- CodecFuns]),
+    AllLocalFuns = lists:flatmap(
+		     fun(LocalFun) ->
+			     digraph_utils:reachable([LocalFun], FunDeps)
+		     end, LocalFuns),
+    lists:flatmap(
+      fun(V) ->
+	      case digraph:vertex(FunDeps, V) of
+		  false ->
+		      [];
+		  {V, Form} when is_list(Form) ->
+		      Form;
+		  {V, Form} ->
+		      case erl_syntax:is_form(Form) of
+			  true -> [Form];
+			  false -> []
+		      end
+	      end
+      end, lists:usort(AllLocalFuns)).
+
+make_records({Tags, TypesDict, RecDict}, TaggedElems, PredefRecords, FunDict, Opts) ->
     {Strings, _} =
         lists:foldl(
           fun(Tag, {Res, Seen}) ->
@@ -295,7 +606,7 @@ make_records({Tags, TypesDict, RecDict}, TaggedElems, PredefRecords, Opts) ->
 				      false ->
 					  {[record_to_string(
 					      RefElem, RecDict,
-					      TypesDict, Opts)|Res],
+					      TypesDict, FunDict, Opts)|Res],
 					   [RecName|Seen]};
 				      true ->
 					  {Res, Seen}
@@ -311,7 +622,7 @@ make_typespecs(_ModName, {_Tags, _TypesDict, RecDict}, Opts) ->
     case proplists:get_value(add_type_specs, Opts) of
 	TypeName when is_atom(TypeName), TypeName /= undefined ->
 	    case [[atom_to_string(R), "()"]
-		  || {record, R} <- dict:fetch_keys(RecDict)] of
+		  || {record, R} <- dict_keys(RecDict)] of
 		[] ->
 		    [];
 		Records ->
@@ -327,18 +638,37 @@ make_typespecs(_ModName, {_Tags, _TypesDict, RecDict}, Opts) ->
 atom_to_string(Atom) ->
     erl_syntax:atom_literal(abstract(Atom)).
 
-record_to_string(#elem{result = Result} = Elem, RecDict, RecTypes, Opts) ->
+-define(is_raw_type(T),
+	element(1, T) == type orelse
+	element(1, T) == remote_type).
+
+record_to_string(#elem{result = Result} = Elem, RecDict, RecTypes, FunTypes, Opts) ->
     [RecName|RecLabels] = tuple_to_list(Result),
     Prefix = "-record(" ++ atom_to_string(RecName) ++ ", {",
     Sep = "," ++ io_lib:nl() ++ lists:duplicate(length(Prefix), $ ),
     Fs = lists:map(
            fun(Label) ->
                    FName = label_to_record_field(Label),
-                   case get_label_type(Label, Elem, RecTypes) of
-                       {FType, undefined, _} ->
+                   case get_label_type(Label, Elem, RecTypes, FunTypes, Opts) of
+		       {FType, undefined, true} when ?is_raw_type(FType) ->
+			   [atom_to_string(FName), " :: ",
+			    erl_types:t_form_to_string(FType)];
+		       {FType, undefined, false} when ?is_raw_type(FType) ->
+			   [atom_to_string(FName), " :: ",
+			    "undefined | ", erl_types:t_form_to_string(FType)];
+		       {FType, Default, _} when ?is_raw_type(FType) ->
+			   [atom_to_string(FName), " = ",
+                            io_lib:fwrite("~w", [Default]),
+                            " :: ", erl_types:t_form_to_string(FType)];
+                       {FType, undefined, true} ->
                            FType1 = erl_types:t_subtract(
-                                      FType, erl_types:t_atom(undefined)),
+				      FType, erl_types:t_atom(undefined)),
                            [atom_to_string(FName), " :: ",
+                            erl_types:t_to_string(FType1, RecDict)];
+		       {FType, undefined, false} ->
+			   FType1 = erl_types:t_sup(
+				      FType, erl_types:t_atom(undefined)),
+			   [atom_to_string(FName), " :: ",
                             erl_types:t_to_string(FType1, RecDict)];
                        {FType, Default, _} ->
                            Type = erl_types:t_sup(
@@ -366,99 +696,163 @@ header(FileName) ->
       ["% Created automatically by XML generator (fxml_gen.erl)",
        "% Source: " ++ FileName]).
 
-make_top_decoders(TaggedSpecs, ModName, Opts) when is_list(Opts) ->
-    IgnoreXMLNS = proplists:get_bool(ignore_xmlns, Opts),
-    make_top_decoders(TaggedSpecs, ModName, IgnoreXMLNS);
-make_top_decoders(TaggedSpecs, ModName, true) ->
-    C0 = ?AST(IgnoreEls = proplists:get_bool(ignore_els, Opts)),
-    C1 = lists:map(
-           fun({Tag, #elem{name = Name}}) ->
-                   erl_syntax:clause(
-		     [?AST({xmlel, '?a(Name)', _, _})],
-                     none,
-                     [make_function_call(
-                        make_dec_fun_name([Tag]),
-                        [?AST(<<>>), ?AST(IgnoreEls), ?AST(_el)])])
-           end, TaggedSpecs),
-    C2 = lists:map(
-           fun({_Tag, #elem{name = Name}}) ->
-                   erl_syntax:clause(
-		     [?AST({xmlel, '?a(Name)', _, _})],
-                     none,
-                     [?AST(true)])
-           end, TaggedSpecs),
-    NilClause1 = erl_syntax:clause(
-                   [?AST({xmlel, _name, _, _})],
-                   none,
-                   [?AST(erlang:error(
-			   {'?a(ModName)', {unknown_tag, _name, <<>>}}))]),
-    NilClause2 = erl_syntax:clause([?AST(_)], none, [?AST(true)]),
-    [make_function(
-       "decode",
-       [?AST(_el)],
-       [?AST(decode(_el, []))]),
-     make_function("decode",
-		   [?AST(_el), ?AST(Opts)],
-		   [C0,
-		    erl_syntax:case_expr(
-		      ?AST(_el),
-		      C1 ++ [NilClause1])]),
-     erl_syntax:function(?AST(is_known_tag), C2 ++ [NilClause2])];
-make_top_decoders(TaggedSpecs1, ModName, false) ->
-    TaggedSpecs = lists:flatmap(
-		    fun({Tag, #elem{xmlns = XMLNSs} = E}) when is_list(XMLNSs) ->
-			    [{Tag, E#elem{xmlns = XMLNS}} || XMLNS <- XMLNSs];
-		       (TE) ->
-			    [TE]
-		    end, TaggedSpecs1),
-    C0 = ?AST(IgnoreEls = proplists:get_bool(ignore_els, Opts)),
-    C1 = lists:map(
-           fun({Tag, #elem{xmlns = XMLNS, name = Name}}) ->
-                   erl_syntax:clause(
-		     [?AST({'?a(Name)', '?a(XMLNS)'})],
-                     none,
-                     [make_function_call(
-                        make_dec_fun_name([Tag]),
-                        [abstract(XMLNS),
-			 ?AST(IgnoreEls),
-			 ?AST(_el)])])
-           end, TaggedSpecs),
-    C2 = lists:map(
-           fun({_Tag, #elem{xmlns = XMLNS, name = Name}}) ->
-                   erl_syntax:clause(
-		     [?AST({'?a(Name)', '?a(XMLNS)'})],
-                     none,
-                     [?AST(true)])
-           end, TaggedSpecs),
-    NilClause = erl_syntax:clause(
-                  [?AST({_name, _xmlns})],
-                  none,
-                  [?AST(erlang:error(
-			  {'?a(ModName)', {unknown_tag, _name, _xmlns}}))]),
-    [make_function(
-       "decode",
-       [?AST(_el)],
-       [?AST(decode(_el, []))]),
-     make_function(
-       "decode",
-       [?AST({xmlel, _name, _attrs, _} = _el), ?AST(Opts)],
-       [C0,
-	erl_syntax:case_expr(
-	  ?AST({_name, get_attr(<<"xmlns">>, _attrs)}),
-          C1 ++ [NilClause])]),
-     make_function(
-       "is_known_tag",
-       [?AST({xmlel, _name, _attrs, _} = _el)],
-       [erl_syntax:case_expr(
-	  ?AST({_name, get_attr(<<"xmlns">>, _attrs)}),
-          C2 ++ [erl_syntax:clause(
-                   [?AST(_)], none, [?AST(false)])])])].
+make_registrar(ModName) ->
+    ResolverMod = resolver_mod(ModName),
+    [make_function(register_module, [?AST(Mod)],
+		   [?AST(register_module(Mod, '?a(ResolverMod)'))]),
+     make_function(unregister_module, [?AST(Mod)],
+		   [?AST(unregister_module(Mod, '?a(ResolverMod)'))])].
 
-make_top_encoders(TaggedSpecs, Opts) ->
-    IgnoreXMLNS = proplists:get_bool(ignore_xmlns, Opts),
+make_resolver(TaggedSpecs, ModName) ->
+    ResolverMod = resolver_mod(ModName),
+    TagNSMods = lists:foldl(
+		  fun({_, #elem{xmlns = XMLNS, name = Name, module = Mod}}, Acc)
+			when is_list(XMLNS) ->
+			  lists:foldl(
+			    fun(NS, D) ->
+				    dict:store({Name, NS}, Mod, D)
+			    end, Acc, XMLNS);
+		     ({_, #elem{xmlns = XMLNS, name = Name, module = Mod}}, Acc) ->
+			  dict:store({Name, XMLNS}, Mod, Acc)
+		  end, dict:new(), TaggedSpecs),
+    RecordMods = lists:foldl(
+		   fun({_, #elem{result = Result, module = Mod}}, Acc) ->
+			   case term_is_record(Result) of
+			       true ->
+				   Key = {element(1, Result), tuple_size(Result)},
+				   dict:append(Key, Mod, Acc);
+			       false ->
+				   Acc
+			   end
+		   end, dict:new(), TaggedSpecs),
+    NilClause1 = erl_syntax:clause([?AST(Name), ?AST(XMLNS)], none,
+				   [?AST('?a(ResolverMod)':lookup(Name, XMLNS))]),
+    Clauses1 = dict:fold(
+		 fun({Name, NS}, Mod, Acc) ->
+			 [erl_syntax:clause(
+			    [?AST('?a(Name)'), ?AST('?a(NS)')],
+			    none,
+			    [?AST('?a(Mod)')])|Acc]
+		 end, [NilClause1], TagNSMods),
+    NilClause2 = erl_syntax:clause([?AST(Record)], none,
+				   [?AST('?a(ResolverMod)':lookup(Record))]),
+    Clauses2 = dict:fold(
+		 fun({RecName, RecSize}, [Mod|_], Acc) ->
+			 [erl_syntax:clause(
+			    [erl_syntax:tuple(
+			       [erl_syntax:atom(RecName)|
+				[?AST(_) || _ <- lists:seq(1, RecSize-1)]])],
+			    none,
+			    [erl_syntax:atom(Mod)])|Acc]
+		 end, [NilClause2], RecordMods),
+    [erl_syntax:function(?AST(get_mod), Clauses1),
+     erl_syntax:function(?AST(get_mod), Clauses2)].
+
+make_top_decoders(_TaggedSpecs, ModName) ->
+    C0 = ?AST(XMLNS = get_attr(<<"xmlns">>, Attrs, TopXMLNS)),
+    C1 = erl_syntax:case_expr(
+	   ?AST(get_mod(Name, XMLNS)),
+	   [erl_syntax:clause(
+	      [?AST(undefined)],
+	      ?AST(XMLNS == <<>>),
+	      [?AST(erlang:error(
+		      {'?a(ModName)', {missing_tag_xmlns, Name}}))]),
+	    erl_syntax:clause(
+	      [?AST(undefined)],
+	      none,
+	      [?AST(erlang:error(
+			    {'?a(ModName)', {unknown_tag, Name, XMLNS}}))]),
+	    erl_syntax:clause(
+	      [?AST(Mod)],
+	      none,
+	      [?AST(Mod:do_decode(Name, XMLNS, El, Opts))])]),
+    [make_function("decode", [?AST(El)], [?AST(decode(El, <<>>, []))]),
+     make_function("decode", [?AST(El), ?AST(Opts)], [?AST(decode(El, <<>>, Opts))]),
+     make_function(
+       "decode",
+       [?AST({xmlel, Name, Attrs, _} = El), ?AST(TopXMLNS), ?AST(Opts)],
+       [C0, C1])].
+
+make_decoders(TaggedSpecs1, ParentMod, ModName) ->
+    TaggedSpecs = lists:flatmap(
+		    fun({Tag, #elem{xmlns = XMLNSs, module = Mod} = E})
+			  when Mod == ModName ->
+			    if is_list(XMLNSs) ->
+				    [{Tag, E#elem{xmlns = XMLNS}} || XMLNS <- XMLNSs];
+			       true ->
+				    [{Tag, E}]
+			    end;
+		       (_) ->
+			    []
+		    end, TaggedSpecs1),
+    NilClause = [erl_syntax:clause(
+		   [?AST(Name), ?AST(<<>>), ?AST(_), ?AST(_)],
+		   none,
+		   [?AST(erlang:error(
+			   {'?a(ParentMod)', {missing_tag_xmlns, Name}}))]),
+		 erl_syntax:clause(
+		   [?AST(Name), ?AST(XMLNS), ?AST(_), ?AST(_)],
+		   none,
+		   [?AST(erlang:error(
+			    {'?a(ParentMod)', {unknown_tag, Name, XMLNS}}))])],
+    Clauses = lists:map(
+		fun({Tag, #elem{xmlns = XMLNS, name = Name}}) ->
+			erl_syntax:clause(
+			  [?AST('?a(Name)'), ?AST('?a(XMLNS)'), ?AST(El), ?AST(Opts)],
+			  none,
+			  [make_function_call(
+			     make_dec_fun_name([Tag]),
+			     [abstract(XMLNS),
+			      ?AST(Opts),
+			      ?AST(El)])])
+		end, TaggedSpecs),
+    [erl_syntax:function(erl_syntax:atom(do_decode), Clauses ++ NilClause),
+     make_function(tags, [],
+		   [erl_syntax:list(
+		      lists:map(
+			fun({_, #elem{name = Name, xmlns = NS}}) ->
+				?AST({'?a(Name)', '?a(NS)'})
+			end, TaggedSpecs))])].
+
+make_top_encoders(_TaggedSpecs, _ModName) ->
+    Clause1 = erl_syntax:clause(
+		[?AST({xmlel, _, _, _} = El), ?AST(_)],
+		none,
+		[?AST(El)]),
+    Clause2 = erl_syntax:clause(
+		[?AST({xmlcdata, _} = CData), ?AST(_)],
+		none,
+		[?AST(CData)]),
+    GetNameCase = [?AST(Mod = get_mod(El)),
+		   ?AST(Mod:do_get_name(El))],
+    GetNSCase = [?AST(Mod = get_mod(El)),
+		 ?AST(Mod:do_get_ns(El))],
+    KnownTagCase = [?AST(XMLNS = get_attr(<<"xmlns">>, Attrs, TopXMLNS)),
+		    ?AST(get_mod(Name, XMLNS) /= undefined)],
+    Clause3 = erl_syntax:clause(
+		[?AST(El), ?AST(TopXMLNS)],
+		none,
+		[?AST(Mod = get_mod(El)),
+		 ?AST(Mod:do_encode(El, TopXMLNS))]),
+    [make_function(encode, [?AST(El)], [?AST(encode(El, <<>>))]),
+     erl_syntax:function(?AST(encode), [Clause1, Clause2, Clause3]),
+     make_function(get_name, [?AST(El)], GetNameCase),
+     make_function(get_ns, [?AST(El)], GetNSCase),
+     make_function(is_known_tag,
+		   [?AST({xmlel, Name, Attrs, _}), ?AST(TopXMLNS)],
+		   KnownTagCase),
+     make_function(get_els, [?AST(Term)],
+		   [?AST(Mod = get_mod(Term)),
+		    ?AST(Mod:get_els(Term))]),
+     make_function(set_els, [?AST(Term), ?AST(Els)],
+		   [?AST(Mod = get_mod(Term)),
+		    ?AST(Mod:set_els(Term, Els))])].
+
+make_encoders(TaggedSpecs, ModName) ->
     {RecNames, ResNames} =
 	lists:foldl(
-	  fun({Tag, #elem{result = Result}}, {RecAcc, ResAcc}) ->
+	  fun({Tag, #elem{result = Result, module = Mod}}, {RecAcc, ResAcc})
+		when Mod == ModName ->
 		  try
 		      [H|_]= tuple_to_list(Result),
 		      true = is_atom(H),
@@ -467,11 +861,13 @@ make_top_encoders(TaggedSpecs, Opts) ->
 		       dict:append(H, Result, ResAcc)}
 		  catch _:_ ->
 			  {RecAcc, ResAcc}
-		  end
+		  end;
+	     (_, Acc) ->
+		  Acc
 	  end, {dict:new(), dict:new()}, TaggedSpecs),
     {EncClauses, NSClauses, TagClauses, _} =
         lists:foldl(
-          fun({Tag, #elem{name = Name, xmlns = XMLNS,
+          fun({Tag, #elem{name = Name, xmlns = XMLNS, module = Mod,
 			  result = Result, attrs = Attrs}},
 	      {EncAcc, NSAcc, TagAcc, Seen}) ->
 		  XMLNSLabel = case lists:keyfind(<<"xmlns">>, #attr.name, Attrs) of
@@ -480,11 +876,18 @@ make_top_encoders(TaggedSpecs, Opts) ->
 				   _ ->
 				       undefined
 			       end,
-                  EncodeResult = labels_to_underscores(Result),
-		  NSResult = labels_to_underscores(Result, [XMLNSLabel]),
-		  TagResult = labels_to_underscores(Result),
                   Var = label_to_var(prepare_label(undefined, Name)),
 		  HasXMLNSAttr = XMLNSLabel /= undefined,
+		  EncodeResult = if HasXMLNSAttr and not is_list(XMLNS) ->
+					 labels_to_underscores(
+					   Result, [], [{XMLNSLabel, XMLNS}]);
+				    true ->
+					 labels_to_underscores(Result)
+				 end,
+		  EncodeResultAux = labels_to_underscores(
+				      Result, [], [{XMLNSLabel, <<>>}]),
+		  NSResult = labels_to_underscores(Result, [XMLNSLabel]),
+		  TagResult = labels_to_underscores(Result),
                   try
                       [H|_]= tuple_to_list(Result),
                       true = is_atom(H),
@@ -494,30 +897,34 @@ make_top_encoders(TaggedSpecs, Opts) ->
 		      true = lists:member(Tag, Tags),
 		      IsDuplicated = lists:member(Result, OtherResults),
 		      AlreadySeen = lists:member(Result, Seen),
-                      XMLNSAttrs = if IgnoreXMLNS or HasXMLNSAttr
-				      or is_list(XMLNS) or IsDuplicated ->
-                                           ?AST([]);
-				      true ->
-					   ?AST([{<<"xmlns">>, '?a(XMLNS)'}])
-                                   end,
                       {if AlreadySeen ->
 			       EncAcc;
 			  true ->
+			       Call = [make_function_call(
+					 make_enc_fun_name(ModName, Mod, [Tag]),
+					 [Var, ?AST(TopXMLNS)])],
 			       [erl_syntax:clause(
-				  [?AST('?EncodeResult' = '?Var')],
-				  none,
-				  [make_function_call(
-				     make_enc_fun_name([Tag]),
-				     [Var, XMLNSAttrs])])|EncAcc]
+				  [?AST('?EncodeResult' = '?Var'), ?AST(TopXMLNS)],
+				  none, Call)] ++
+				   if HasXMLNSAttr and not is_list(XMLNS) ->
+					   [erl_syntax:clause(
+					      [?AST('?EncodeResultAux' = '?Var'),
+					       ?AST(TopXMLNS = '?a(XMLNS)')],
+					      none, Call)];
+				      true ->
+					   []
+				   end ++ EncAcc
 		       end,
-		       if IgnoreXMLNS or IsDuplicated ->
+		       if IsDuplicated ->
 			       NSAcc;
 			  HasXMLNSAttr ->
 			       [erl_syntax:clause(
 				  [NSResult], none,
 				  [label_to_var(XMLNSLabel)])|NSAcc];
 			  is_list(XMLNS) ->
-			       NSAcc;
+			       [erl_syntax:clause(
+				  [NSResult], none,
+				  [abstract(hd(XMLNS))])|NSAcc];
 			  true ->
 			       [erl_syntax:clause(
 				  [NSResult], none,
@@ -535,22 +942,45 @@ make_top_encoders(TaggedSpecs, Opts) ->
                           {EncAcc, NSAcc, TagAcc, Seen}
                   end
           end, {[], [], [], []}, TaggedSpecs),
-    XmlElClause = erl_syntax:clause(
-		    [?AST({xmlel, _, _, _} = El)],
-		    none,
-		    [?AST(El)]),
-    [erl_syntax:function(?AST(encode), [XmlElClause|EncClauses]),
-     erl_syntax:function(?AST(get_name), TagClauses),
-     erl_syntax:function(?AST(get_ns), NSClauses)].
+    if EncClauses /= [] ->
+	    [erl_syntax:function(?AST(do_encode), EncClauses)];
+       true -> []
+    end ++
+    if TagClauses /= [] ->
+	    [erl_syntax:function(?AST(do_get_name), lists:usort(TagClauses))];
+       true -> []
+    end ++
+    if NSClauses /= [] ->
+	    [erl_syntax:function(?AST(do_get_ns), lists:usort(NSClauses))];
+       true -> []
+    end.
 
-make_printer(TaggedSpecs, PredefRecords) ->
-    PassClause = erl_syntax:clause(
-                   [?AST(_), ?AST(_)],
-                   none,
-                   [?AST(no)]),
+make_printer(TaggedSpecs, PredefRecords, ModName, ParentMod) ->
+    PassClause1 =
+	if ModName == ParentMod ->
+		[erl_syntax:clause(
+		   [?AST(xmlel), ?AST(3)],
+		   none,
+		   [?AST([name, attrs, children])]),
+		 erl_syntax:clause(
+		   [?AST(Name), ?AST(Arity)],
+		   none,
+		   [erl_syntax:case_expr(
+		      ?AST(get_mod(
+			     erlang:make_tuple(Arity+1, undefined, [{1, Name}]))),
+		      [erl_syntax:clause(
+			 [?AST(undefined)], none, [?AST(no)]),
+		       erl_syntax:clause(
+			 [?AST(Mod)],
+			 none,
+			 [?AST(Mod:pp(Name, Arity))])])])];
+	   true ->
+		[erl_syntax:clause([?AST(_), ?AST(_)], none, [?AST(no)])]
+	end,
     %% Exclude tags with duplicated results
     RecNames = lists:foldl(
-                 fun({Tag, #elem{result = Result}}, Acc) ->
+                 fun({Tag, #elem{result = Result, module = Mod}}, Acc)
+		       when Mod == ModName ->
                          try
                              [H|_]= tuple_to_list(Result),
                              true = is_atom(H),
@@ -558,11 +988,13 @@ make_printer(TaggedSpecs, PredefRecords) ->
                              dict:append(H, Tag, Acc)
                          catch _:_ ->
                                  Acc
-                         end
+                         end;
+		    (_, Acc) ->
+			 Acc
                  end, dict:new(), TaggedSpecs),
-    Clauses =
+    {Clauses1, Records} =
         lists:foldl(
-          fun({Tag, #elem{result = Result}}, Acc) ->
+          fun({Tag, #elem{result = Result}}, {Acc1, Acc2}) ->
                   try
                       [H|T]= tuple_to_list(Result),
                       true = is_atom(H),
@@ -570,29 +1002,88 @@ make_printer(TaggedSpecs, PredefRecords) ->
                       [Tag|_] = dict:fetch(H, RecNames),
 		      Fields = case dict:find(H, PredefRecords) of
 				   {ok, Fs} ->
-				       Fs;
+				       [FName || {FName, _} <- Fs];
 				   error ->
 				       [label_to_record_field(F) || F <- T]
 			       end,
-                      [erl_syntax:clause(
-                         [erl_syntax:atom(H), abstract(length(T))],
-                         none,
-                         [erl_syntax:list(
-                            [erl_syntax:atom(F) || F <- Fields])])
-                       |Acc]
-                  catch _:_ ->
-                          Acc
+                      {[erl_syntax:clause(
+			  [erl_syntax:atom(H), abstract(length(T))],
+			  none,
+			  [erl_syntax:list(
+			     [erl_syntax:atom(F) || F <- Fields])])
+			|Acc1],
+		       [{H, length(T)}|Acc2]}
+		  catch _:_ ->
+                          {Acc1, Acc2}
                   end
-          end, [PassClause], TaggedSpecs),
-    [make_function(
-       "pp",
-       [?AST(Term)],
-       [?AST(io_lib_pretty:print(Term, fun pp/2))]),
-     erl_syntax:function(?AST(pp), Clauses)].
+          end, {[], []}, TaggedSpecs),
+    [erl_syntax:function(?AST(pp), Clauses1 ++ PassClause1),
+     make_function(records, [],
+		   [erl_syntax:list(
+		      lists:map(
+			fun({RecName, RecSize}) ->
+				?AST({'?a(RecName)', '?a(RecSize)'})
+			end, Records))])].
+
+make_getters_setters(TaggedSpecs, PredefRecords, ModName) ->
+    RecNames = lists:foldl(
+                 fun({Tag, #elem{result = Result, module = Mod}}, Acc)
+		       when Mod == ModName ->
+                         try
+                             [H|_]= tuple_to_list(Result),
+                             true = is_atom(H),
+                             false = is_label(H),
+                             dict:append(H, Tag, Acc)
+                         catch _:_ ->
+                                 Acc
+                         end;
+		    (_, Acc) ->
+			 Acc
+                 end, dict:new(), TaggedSpecs),
+    {Getters, Setters} =
+        lists:foldl(
+          fun({Tag, #elem{result = Result}}, {Acc1, Acc2}) ->
+                  try
+                      [H|T]= tuple_to_list(Result),
+                      true = is_atom(H),
+                      false = is_label(H),
+                      [Tag|_] = dict:fetch(H, RecNames),
+		      Fields = case dict:find(H, PredefRecords) of
+				   {ok, Fs} ->
+				       [FName || {FName, _} <- Fs];
+				   error ->
+				       [label_to_record_field(F) || F <- T]
+			       end,
+		      case lists:member(sub_els, Fields) of
+			  false ->
+			      {Acc1, Acc2};
+			  true ->
+			      {[erl_syntax:clause(
+				  [record_fields_to_vars(H, Fields)],
+				  none,
+				  [?AST(_sub_els)])|Acc1],
+			       [erl_syntax:clause(
+				  [record_fields_to_vars(H, Fields, [{sub_els, ?AST(_)}]),
+				   ?AST(_sub_els)],
+				  none,
+				  [record_fields_to_vars(
+				     H, Fields, [{sub_els, ?AST(_sub_els)}])])|Acc2]}
+		      end
+		  catch _:_ ->
+			 {Acc1, Acc2}
+                  end
+          end, {[], []}, TaggedSpecs),
+    case {Getters, Setters} of
+	{[], []} ->
+	    [];
+	_ ->
+	    [erl_syntax:function(?AST(get_els), Getters),
+	     erl_syntax:function(?AST(set_els), Setters)]
+    end.
 
 elem_to_AST(#elem{name = Name, xmlns = XMLNS, cdata = CData,
                   result = Result, attrs = Attrs, refs = _Refs} = Elem,
-            Tag, AllElems, Types, ModName, Opts) ->
+            Tag, AllElems, Types, ModName, PredefRecords, Opts) ->
     AttrAST = lists:flatmap(
                 fun(#attr{name = AttrName,
                           required = Required,
@@ -624,23 +1115,60 @@ elem_to_AST(#elem{name = Name, xmlns = XMLNS, cdata = CData,
             false ->
                 []
         end,
-    DecAST = make_elem_dec_fun(Elem, Tag, AllElems, Types, ModName, Opts),
-    EncAST = make_elem_enc_fun(Elem, Tag, AllElems),
+    DecAST = make_elem_dec_fun(Elem, Tag, AllElems, Types,
+			       ModName, PredefRecords, Opts),
+    EncAST = make_elem_enc_fun(Elem, Tag, AllElems, ModName),
     DecAST ++ EncAST ++ AttrAST ++ CDataAST.
 
 %% Replace in `Term' every label found in `Labels'
 %% with the corresponding value.
 subst_labels(Term) ->
-    erl_syntax_lib:map(
-      fun(T) ->
-              try
-                  Label = erl_syntax:atom_value(T),
-                  true = is_label(Label),
-                  label_to_var(Label)
-              catch _:_ ->
-                      T
-              end
-      end, abstract(Term)).
+    subst_labels(Term, undefined).
+
+subst_labels(Term, PredefRecords) ->
+    case have_label(Term, '$_') of
+	true when PredefRecords /= undefined ->
+	    try
+		true = term_is_record(Term),
+		[H|Elems] = erl_syntax:tuple_elements(abstract(Term)),
+		RecName = erl_syntax:atom_value(H),
+		RecFields = dict:fetch(RecName, PredefRecords),
+		Vars = lists:map(
+			 fun({T, {_, Default}}) ->
+				 AbsDefault = if Default == none ->
+						      ?AST(undefined);
+						 true ->
+						      Default
+					      end,
+				 try
+				     Label = erl_syntax:atom_value(T),
+				     true = is_label(Label),
+				     case Label of
+					 '$_' -> AbsDefault;
+					 _ -> label_to_var(Label)
+				     end
+				 catch _:_ ->
+					 T
+				 end
+			 end, lists:zip(Elems, RecFields)),
+		erl_syntax:tuple([H|Vars])
+	    catch error:{badmatch, false} ->
+		    bad_spec({underscore_label_outside_record_tuple, Term});
+		  _:_ ->
+		    bad_spec({no_predefined_record_found, Term})
+	    end;
+	_ ->
+	    erl_syntax_lib:map(
+	      fun(T) ->
+		      try
+			  Label = erl_syntax:atom_value(T),
+			  true = is_label(Label),
+			  label_to_var(Label)
+		      catch _:_ ->
+			      T
+		      end
+	      end, abstract(Term))
+    end.
 
 get_elem_by_ref(RefName, TaggedElems) ->
     {_, Elem} = lists:keyfind(RefName, 1, TaggedElems),
@@ -648,8 +1176,8 @@ get_elem_by_ref(RefName, TaggedElems) ->
 
 get_spec_by_label('$_els', _Elem) ->
     sub_els;
-get_spec_by_label('$_xmls', _Elem) ->
-    xml_els;
+get_spec_by_label('$_', _Elem) ->
+    '_';
 get_spec_by_label(Label, Elem) ->
     [Spec|T] = lists:flatmap(
                  fun(#cdata{label = L} = CData) when Label == L ->
@@ -685,11 +1213,12 @@ group_refs(Refs) ->
                 dict:append_list(L, [Ref], G)
         end, dict:new(), Refs)).
 
-make_elem_dec_fun(#elem{name = Name, result = Result, refs = Refs,
-                        cdata = CData, attrs = Attrs, xmlns = XMLNS},
-                  Tag, AllElems, Types, ModName, Opts) ->
+make_elem_dec_fun(#elem{name = Name, result = Result, refs = Refs, module = Mod,
+                        cdata = CData, attrs = Attrs, xmlns = XMLNS,
+			ignore_els = IgnoreEls},
+                  Tag, AllElems, Types, ModName, PredefRecords, Opts) ->
     FunName = make_dec_fun_name([Tag]),
-    ResultWithVars = subst_labels(Result),
+    ResultWithVars = subst_labels(Result, PredefRecords),
     AttrVars = lists:map(
                  fun(#attr{name = AttrName, label = AttrLabel}) ->
                          label_to_var(prepare_label(AttrLabel, AttrName))
@@ -703,12 +1232,6 @@ make_elem_dec_fun(#elem{name = Name, result = Result, refs = Refs,
     SubElVars = case have_label(Result, '$_els') of
                     true ->
                         [label_to_var('$_els')];
-                    false ->
-                        []
-                end,
-    XmlElVars = case have_label(Result, '$_xmls') of
-                    true ->
-                        [label_to_var('$_xmls')];
                     false ->
                         []
                 end,
@@ -732,16 +1255,16 @@ make_elem_dec_fun(#elem{name = Name, result = Result, refs = Refs,
                 []
         end,
     ElCDataMatch =
-        case CDataVars ++ ElemVars ++ SubElVars ++ XmlElVars of
+        case CDataVars ++ ElemVars ++ SubElVars of
             [] ->
                 [];
             _ ->
                 [erl_syntax:match_expr(
-                   tuple_or_single_var(CDataVars ++ ElemVars ++ SubElVars ++ XmlElVars),
+                   tuple_or_single_var(CDataVars ++ ElemVars ++ SubElVars),
                    make_function_call(
                      FunName ++ "_els",
                      [?AST(__TopXMLNS),
-		      ?AST(__IgnoreEls),
+		      ?AST(__Opts),
 		      ?AST(_els)|
                       lists:flatmap(
                         fun({_, [#ref{min = 0, max = 1, default = Def}|_]}) ->
@@ -754,30 +1277,24 @@ make_elem_dec_fun(#elem{name = Name, result = Result, refs = Refs,
                                 [];
                            (_) ->
                                 [?AST([])]
-                        end, [CData|group_refs(Refs)] ++ SubElVars ++ XmlElVars)]))]
+                        end, [CData|group_refs(Refs)] ++ SubElVars)]))]
         end,
     [make_function(
        FunName,
        [?AST(__TopXMLNS),
-	?AST(__IgnoreEls),
+	?AST(__Opts),
 	?AST({xmlel, '?a(Name)', _attrs, _els})],
        ElCDataMatch ++ AttrMatch ++ [ResultWithVars])]
-        ++ make_els_dec_fun(FunName ++ "_els", CData, HaveCData, SubElVars,
-                            XmlElVars, Refs, Tag, XMLNS, AllElems,
-                            Result, Types, ModName, Opts)
+        ++ make_els_dec_fun(Mod, FunName ++ "_els", CData, HaveCData, SubElVars,
+                            Refs, Tag, XMLNS, AllElems,
+                            Result, Types, ModName, IgnoreEls, Opts)
         ++ make_attrs_dec_fun(FunName ++ "_attrs", Attrs, Tag).
 
-make_els_dec_clause(FunName, CDataVars, Refs, TopXMLNS, AllElems,
-                    Result, {_SortedTags, Types, _RecDict}, Opts) ->
+make_els_dec_clause(ParentMod, ModName, FunName, CDataVars, Refs, _TopXMLNS,
+		    AllElems, Result, {_SortedTags, Types, _RecDict}, _Opts) ->
     SubElVars = case have_label(Result, '$_els') of
                     true ->
                         [label_to_var('$_els')];
-                    false ->
-                        []
-                end,
-    XmlElVars = case have_label(Result, '$_xmls') of
-                    true ->
-                        [label_to_var('$_xmls')];
                     false ->
                         []
                 end,
@@ -786,20 +1303,10 @@ make_els_dec_clause(FunName, CDataVars, Refs, TopXMLNS, AllElems,
               Label = prepare_label(RefLabel, RefName),
               Var = label_to_var(Label),
               RefElem = get_elem_by_ref(RefName, AllElems),
-	      IgnoreXMLNS = proplists:get_bool(ignore_xmlns, Opts),
+	      RefMod = RefElem#elem.module,
               XMLNSs = lists:flatten([RefElem#elem.xmlns]),
-	      TopXMLNSs = lists:flatten([TopXMLNS]),
-	      CommonXMLNSs = sets:to_list(
-			       sets:intersection(
-				 sets:from_list(XMLNSs),
-				 sets:from_list(TopXMLNSs))),
-	      HasCommonXMLNSs = CommonXMLNSs /= [],
-	      TopXMLNSComparison = [?AST(__TopXMLNS == '?a(NS)') || NS <- CommonXMLNSs],
 	      ElemVars = lists:map(
-			   fun({Labl, [#ref{max = 1}|_]})
-				 when Labl == Label, IgnoreXMLNS ->
-				   ?AST(_);
-			      ({Labl, _}) ->
+			   fun({Labl, _}) ->
 				   label_to_var(Labl)
 			   end, group_refs(Refs)),
               NewElemVars =
@@ -808,9 +1315,9 @@ make_els_dec_clause(FunName, CDataVars, Refs, TopXMLNS, AllElems,
 			    fun({L, [#ref{min = Min, max = 1}|_]})
 				  when L == Label ->
 				    Call = make_function_call(
-					     make_dec_fun_name([RefName]),
+					     make_dec_fun_name(ModName, RefMod, [RefName]),
 					     [NS,
-					      ?AST(__IgnoreEls),
+					      ?AST(__Opts),
 					      ?AST(_el)]),
 				    if Min == 0 ->
 					    Call;
@@ -823,9 +1330,9 @@ make_els_dec_clause(FunName, CDataVars, Refs, TopXMLNS, AllElems,
 					true ->
 					    erl_syntax:case_expr(
 					      make_function_call(
-						make_dec_fun_name([RefName]),
+						make_dec_fun_name(ModName, RefMod, [RefName]),
 						[NS,
-						 ?AST(__IgnoreEls),
+						 ?AST(__Opts),
 						 ?AST(_el)]),
 					      [erl_syntax:clause(
 						 [abstract(Def)], none, [Var]),
@@ -836,9 +1343,9 @@ make_els_dec_clause(FunName, CDataVars, Refs, TopXMLNS, AllElems,
 					false ->
 					    erl_syntax:list(
 					      [make_function_call(
-						 make_dec_fun_name([RefName]),
+						 make_dec_fun_name(ModName, RefMod, [RefName]),
 						 [NS,
-						  ?AST(__IgnoreEls),
+						  ?AST(__Opts),
 						  ?AST(_el)])],
 					      Var)
 				    end;
@@ -848,64 +1355,46 @@ make_els_dec_clause(FunName, CDataVars, Refs, TopXMLNS, AllElems,
 		  end,
               erl_syntax:clause(
                 [?AST(__TopXMLNS),
-		 ?AST(__IgnoreEls),
+		 ?AST(__Opts),
 		 ?AST([{xmlel, '?a(RefElem#elem.name)', _attrs, _} = _el | _els])|
-                 CDataVars ++ ElemVars ++ SubElVars ++ XmlElVars],
+                 CDataVars ++ ElemVars ++ SubElVars],
                 none,
-                case IgnoreXMLNS of
-                    true ->
-                        [make_function_call(
-                           FunName,
-                           [?AST(__TopXMLNS),
-			    ?AST(__IgnoreEls),
-			    ?AST(_els)|CDataVars ++ NewElemVars(?AST(__TopXMLNS))
-                            ++ SubElVars ++ XmlElVars])];
-                    false ->
-                        [erl_syntax:case_expr(
-			   ?AST(get_attr(<<"xmlns">>, _attrs)),
-			   case HasCommonXMLNSs of
-			       true ->
-				   [erl_syntax:clause(
-				      [?AST(<<"">>)],
-				      erl_syntax:disjunction(TopXMLNSComparison),
-				      [make_function_call(
-					 FunName,
-					 [?AST(__TopXMLNS),
-					  ?AST(__IgnoreEls),
-					  ?AST(_els)|CDataVars ++ NewElemVars(?AST(__TopXMLNS))
-					  ++ SubElVars ++ XmlElVars])])];
-			       false ->
-				   []
-			   end ++
-			       lists:map(
-				 fun(NS) ->
-					 erl_syntax:clause(
-					   [abstract(NS)],
-					   none,
-					   [make_function_call(
-					      FunName,
-					      [?AST(__TopXMLNS),
-					       ?AST(__IgnoreEls),
-					       ?AST(_els)|CDataVars ++ NewElemVars(abstract(NS))
-					       ++ SubElVars ++ XmlElVars])])
-				 end, XMLNSs)
-			   ++
-			       [erl_syntax:clause(
-				  [?AST(_)], none,
-				  [make_function_call(
-				     FunName,
-				     [?AST(__TopXMLNS),
-				      ?AST(__IgnoreEls),
-				      ?AST(_els)|CDataVars ++ ElemVars
-				      ++ SubElVars ++ XmlElVars])])])]
-		end)
+		[erl_syntax:case_expr(
+		   ?AST('?a(ParentMod)':get_attr(<<"xmlns">>, _attrs, __TopXMLNS)),
+		   lists:map(
+		     fun(NS) ->
+			     erl_syntax:clause(
+			       [abstract(NS)],
+			       none,
+			       [make_function_call(
+				  FunName,
+				  [?AST(__TopXMLNS),
+				   ?AST(__Opts),
+				   ?AST(_els)|CDataVars ++ NewElemVars(abstract(NS))
+				   ++ SubElVars])])
+		     end, XMLNSs)
+		   ++
+		       [erl_syntax:clause(
+			  [?AST(_)], none,
+			  [make_function_call(
+			     FunName,
+			     [?AST(__TopXMLNS),
+			      ?AST(__Opts),
+			      ?AST(_els)|CDataVars ++ ElemVars
+			      ++ case SubElVars of
+				     [] -> [];
+				     _ -> [erl_syntax:list(
+					     [?AST(_el)],
+					     label_to_var('$_els'))]
+				 end])])])])
       end, Refs).
 
-make_els_dec_fun(_FunName, _CData, false, [], [], [], _Tag,
-                 _TopXMLNS, _AllElems, _Result, _Types, _ModName, _Opts) ->
+make_els_dec_fun(_, _FunName, _CData, false, [], [], _Tag,
+                 _TopXMLNS, _AllElems, _Result, _Types, _ModName,
+		 _IgnoreEls, _Opts) ->
     [];
-make_els_dec_fun(FunName, CData, HaveCData, SubElVars, XmlElVars, Refs, Tag,
-                 TopXMLNS, AllElems, Result, Types, ModName, Opts) ->
+make_els_dec_fun(Mod, FunName, CData, HaveCData, SubElVars, Refs, Tag,
+                 TopXMLNS, AllElems, Result, Types, ModName, IgnoreEls, Opts) ->
     CDataVars = if HaveCData ->
                         [label_to_var(CData#cdata.label)];
                    true ->
@@ -929,22 +1418,22 @@ make_els_dec_fun(FunName, CData, HaveCData, SubElVars, XmlElVars, Refs, Tag,
     CDataClause = if HaveCData ->
                           [erl_syntax:clause(
                              [?AST(__TopXMLNS),
-			      ?AST(__IgnoreEls),
+			      ?AST(__Opts),
 			      erl_syntax:list(
                                 [?AST({xmlcdata, _data})],
                                 ?AST(_els))
-                              |CDataVars ++ ElemVars ++ SubElVars ++ XmlElVars],
+                              |CDataVars ++ ElemVars ++ SubElVars],
                              none,
                              [make_function_call(
                                 FunName,
                                 [?AST(__TopXMLNS),
-				 ?AST(__IgnoreEls),
+				 ?AST(__Opts),
 				 ?AST(_els)|
-                                 ResultCData ++ ElemVars ++ SubElVars ++ XmlElVars])])];
+                                 ResultCData ++ ElemVars ++ SubElVars])])];
                      true ->
                           []
                   end,
-    ElemClauses = make_els_dec_clause(FunName, CDataVars,
+    ElemClauses = make_els_dec_clause(ModName, Mod, FunName, CDataVars,
                                       Refs, TopXMLNS, AllElems, Result,
                                       Types, Opts),
     ResultElems = lists:map(
@@ -971,7 +1460,7 @@ make_els_dec_fun(FunName, CData, HaveCData, SubElVars, XmlElVars, Refs, Tag,
                                  [label_to_var(L1)])]);
                        ({L, [#ref{min = 0, max = infinity}|_]}) ->
                             make_function_call(
-                              lists, reverse, [label_to_var(L)])
+                              {lists, reverse}, [label_to_var(L)])
                     end, group_refs(Refs)),
     CDataCall = if HaveCData ->
                         [make_function_call(
@@ -983,146 +1472,100 @@ make_els_dec_fun(FunName, CData, HaveCData, SubElVars, XmlElVars, Refs, Tag,
     SubElResult = case have_label(Result, '$_els') of
                       true ->
                           [make_function_call(
-                             lists, reverse,
+                             {lists, reverse},
                              [label_to_var('$_els')])];
-                      false ->
-                          []
-                  end,
-    XmlElResult = case have_label(Result, '$_xmls') of
-                      true ->
-                          [make_function_call(
-                             lists, reverse,
-                             [label_to_var('$_xmls')])];
                       false ->
                           []
                   end,
     NilClause = erl_syntax:clause(
                   [?AST(__TopXMLNS),
-		   ?AST(__IgnoreEls),
+		   ?AST(__Opts),
 		   ?AST([])|
                    CDataVars ++
                        lists:map(
                          fun({L, _}) ->
                                  label_to_var(L)
-                         end, group_refs(Refs)) ++ SubElVars ++ XmlElVars],
+                         end, group_refs(Refs)) ++ SubElVars],
                   none,
                   [tuple_or_single_var(
-                     CDataCall ++ ResultElems ++ SubElResult ++ XmlElResult)]),
+                     CDataCall ++ ResultElems ++ SubElResult)]),
     SubElPattern = [?AST(__TopXMLNS),
-		    ?AST(__IgnoreEls),
+		    ?AST(__Opts),
 		    erl_syntax:list(
-                      [?AST({xmlel, _, _, _} = _el)],
+                      [?AST({xmlel, _name, _attrs, _} = _el)],
                       ?AST(_els))
-                    |CDataVars ++ ElemVars ++ SubElVars ++ XmlElVars],
+                    |CDataVars ++ ElemVars ++ SubElVars],
     SubElClause =
-        case {have_label(Result, '$_els'),
-              have_label(Result, '$_xmls')} of
-            {true, false} ->
-                SubElBody = erl_syntax:if_expr(
+        case have_label(Result, '$_els') of
+	    true when IgnoreEls ->
+		SubElBody = make_function_call(
+			      FunName,
+			      [?AST(__TopXMLNS),
+			       ?AST(__Opts),
+			       ?AST(_els)|CDataVars ++ ElemVars] ++
+				  [erl_syntax:list(
+				     [?AST(_el)],
+				     label_to_var('$_els'))]),
+		[erl_syntax:clause(SubElPattern, none, [SubElBody])];
+            true ->
+                SubElBody = erl_syntax:case_expr(
+			      ?AST(proplists:get_bool(ignore_els, __Opts)),
 			      [erl_syntax:clause(
-				 [],
-				 [?AST(__IgnoreEls)],
+				 [?AST(true)],
+				 none,
 				 [make_function_call(
                                     FunName,
                                     [?AST(__TopXMLNS),
-				     ?AST(__IgnoreEls),
+				     ?AST(__Opts),
 				     ?AST(_els)|CDataVars ++ ElemVars] ++
                                         [erl_syntax:list(
 					   [?AST(_el)],
                                            label_to_var('$_els'))])]),
 			       erl_syntax:clause(
-				 [], none,
-				 [erl_syntax:case_expr(
-				    ?AST(is_known_tag(_el)),
+				 [?AST(false)],
+				 none,
+				 [?AST(__XMLNS = '?a(ModName)':get_attr(
+						   <<"xmlns">>, _attrs, __TopXMLNS)),
+				  erl_syntax:case_expr(
+				    ?AST('?a(ModName)':get_mod(_name, __XMLNS)),
 				   [erl_syntax:clause(
-				      [?AST(true)],
+				      [?AST(undefined)],
 				      none,
 				      [make_function_call(
 					 FunName,
 					 [?AST(__TopXMLNS),
-					  ?AST(__IgnoreEls),
+					  ?AST(__Opts),
 					  ?AST(_els)|CDataVars ++ ElemVars] ++
 					     [erl_syntax:list(
-						[?AST(decode(_el))],
+						[?AST(_el)],
 						label_to_var('$_els'))])]),
 				    erl_syntax:clause(
-				      [?AST(false)],
+				      [?AST(Mod)],
 				      none,
 				      [make_function_call(
 					 FunName,
 					 [?AST(__TopXMLNS),
-					  ?AST(__IgnoreEls),
+					  ?AST(__Opts),
 					  ?AST(_els)|CDataVars ++ ElemVars] ++
-					     [label_to_var('$_els')])])])])]),
+					     [erl_syntax:list(
+						[?AST(Mod:do_decode(_name, __XMLNS, _el, __Opts))],
+						label_to_var('$_els'))])])])])]),
                 [erl_syntax:clause(SubElPattern, none, [SubElBody])];
-            {false, true} ->
-                SubElBody = make_function_call(
-                              FunName,
-                              [?AST(__TopXMLNS),
-			       ?AST(__IgnoreEls),
-			       ?AST(_els)|CDataVars ++ ElemVars] ++
-                                  [erl_syntax:list(
-                                     [?AST(_el)],
-                                     label_to_var('$_xmls'))]),
-                [erl_syntax:clause(SubElPattern, none, [SubElBody])];
-            {true, true} ->
-                SubElBody = erl_syntax:if_expr(
-			      [erl_syntax:clause(
-				 [],
-				 [?AST(__IgnoreEls)],
-				 [make_function_call(
-                                    FunName,
-                                    [?AST(__TopXMLNS),
-				     ?AST(__IgnoreEls),
-				     ?AST(_els)|CDataVars ++ ElemVars] ++
-                                        [label_to_var('$_els')] ++
-                                        [erl_syntax:list(
-                                           [?AST(_el)],
-                                           label_to_var('$_xmls'))])]),
-			       erl_syntax:clause(
-				 [], none,
-				 [erl_syntax:case_expr(
-				    ?AST(is_known_tag(_el)),
-				    [erl_syntax:clause(
-				       [?AST(true)],
-				       none,
-				       [make_function_call(
-					  FunName,
-					  [?AST(__TopXMLNS),
-					   ?AST(__IgnoreEls),
-					   ?AST(_els)|CDataVars ++ ElemVars] ++
-					      [erl_syntax:list(
-						 [?AST(decode(_el))],
-						 label_to_var('$_els'))]
-					  ++ [label_to_var('$_xmls')])]),
-				     erl_syntax:clause(
-				       [?AST(false)],
-				       none,
-				       [make_function_call(
-					  FunName,
-					  [?AST(__TopXMLNS),
-					   ?AST(__IgnoreEls),
-					   ?AST(_els)|CDataVars ++ ElemVars] ++
-					      [label_to_var('$_els')] ++
-					      [erl_syntax:list(
-						 [?AST(_el)],
-						 label_to_var('$_xmls'))])])])])]),
-                [erl_syntax:clause(SubElPattern, none, [SubElBody])];
-            {false, false} ->
+            false ->
                 []
         end,
     PassClause = if SubElVars == []; CDataVars == [] ->
                          [erl_syntax:clause(
                             [?AST(__TopXMLNS),
-			     ?AST(__IgnoreEls),
+			     ?AST(__Opts),
 			     ?AST([_ | _els])|
-			     CDataVars ++ ElemVars ++ SubElVars ++ XmlElVars],
+			     CDataVars ++ ElemVars ++ SubElVars],
                             none,
                             [make_function_call(
                                FunName,
                                [?AST(__TopXMLNS),
-				?AST(__IgnoreEls), ?AST(_els)
-				|CDataVars ++ ElemVars ++ SubElVars ++ XmlElVars])])];
+				?AST(__Opts), ?AST(_els)
+				|CDataVars ++ ElemVars ++ SubElVars])])];
                     true ->
                          []
                  end,
@@ -1184,18 +1627,20 @@ make_attrs_dec_fun(FunName, Attrs, Tag) ->
             []
     end.
 
-make_ref_enc_funs(#elem{xmlns = TopXMLNS} = Elem, Tag, AllElems) ->
+make_ref_enc_funs(Elem, Tag, AllElems) ->
+    ModName = Elem#elem.module,
     lists:map(
       fun({L, [#ref{min = Min, max = Max, default = Default}|_] = Refs}) ->
               DefaultClause = if Min == 0, Max == 1 ->
                                       [erl_syntax:clause(
-                                         [abstract(Default), ?AST(_acc)],
+                                         [abstract(Default), ?AST(__TopXMLNS),
+					  ?AST(_acc)],
                                          none, [?AST(_acc)])];
                                  Min == 1, Max == 1 ->
                                       [];
                                  true ->
                                       [erl_syntax:clause(
-                                         [?AST([]), ?AST(_acc)],
+                                         [?AST([]), ?AST(__TopXMLNS), ?AST(_acc)],
                                          none, [?AST(_acc)])]
                               end,
               Var = label_to_var(L),
@@ -1203,40 +1648,28 @@ make_ref_enc_funs(#elem{xmlns = TopXMLNS} = Elem, Tag, AllElems) ->
                   lists:map(
                     fun(#ref{name = RefName, max = 1}) ->
                             RefElem = get_elem_by_ref(RefName, AllElems),
-                            XMLNS = RefElem#elem.xmlns,
-                            XMLNSAttrs = case is_my_top_xmlns(XMLNS, TopXMLNS) of
-					     true ->
-                                                 ?AST([]);
-					     {false, NS} ->
-						 ?AST([{<<"xmlns">>, '?a(NS)'}])
-                                         end,
+			    RefMod = RefElem#elem.module,
                             Pattern =
                                 if length(Refs) > 1 ->
                                         MatchVar = erl_syntax:match_expr(
                                                      labels_to_underscores(
                                                        RefElem#elem.result),
                                                      Var),
-                                        [MatchVar, ?AST(_acc)];
+                                        [MatchVar, ?AST(__TopXMLNS), ?AST(_acc)];
                                    true ->
-                                        [Var, ?AST(_acc)]
+                                        [Var, ?AST(__TopXMLNS), ?AST(_acc)]
                                 end,
                             erl_syntax:clause(
                               Pattern,
                               none,
                               [erl_syntax:list(
                                  [make_function_call(
-                                    make_enc_fun_name([RefName]),
-                                    [Var, XMLNSAttrs])],
+                                    make_enc_fun_name(ModName, RefMod, [RefName]),
+                                    [Var, ?AST(__TopXMLNS)])],
                                  ?AST(_acc))]);
                        (#ref{name = RefName}) ->
                             RefElem = get_elem_by_ref(RefName, AllElems),
-                            XMLNS = RefElem#elem.xmlns,
-                            XMLNSAttrs = case is_my_top_xmlns(XMLNS, TopXMLNS) of
-					     true ->
-                                                 ?AST([]);
-					     {false, NS} ->
-						 ?AST([{<<"xmlns">>, '?a(NS)'}])
-                                         end,
+			    RefMod = RefElem#elem.module,
                             Pattern =
                                 if length(Refs) > 1 ->
                                         erl_syntax:match_expr(
@@ -1247,15 +1680,16 @@ make_ref_enc_funs(#elem{xmlns = TopXMLNS} = Elem, Tag, AllElems) ->
                                         Var
                                 end,
                             erl_syntax:clause(
-                              [?AST(['?Pattern' | _els]), ?AST(_acc)],
+                              [?AST(['?Pattern' | _els]), ?AST(__TopXMLNS), ?AST(_acc)],
                               none,
                               [make_function_call(
                                  make_enc_fun_name([L,Tag]),
                                  [?AST(_els),
+				  ?AST(__TopXMLNS),
                                   erl_syntax:list(
                                     [make_function_call(
-                                       make_enc_fun_name([RefName]),
-                                       [Var, XMLNSAttrs])],
+                                       make_enc_fun_name(ModName, RefMod, [RefName]),
+                                       [Var, ?AST(__TopXMLNS)])],
                                     ?AST(_acc))])])
                     end, Refs),
               erl_syntax:function(
@@ -1264,36 +1698,38 @@ make_ref_enc_funs(#elem{xmlns = TopXMLNS} = Elem, Tag, AllElems) ->
       end, group_refs(Elem#elem.refs)).
 
 make_elem_enc_fun(#elem{result = Result, attrs = Attrs,
-                        name = ElemName,
+                        name = ElemName, xmlns = XMLNS,
                         cdata = CData, refs = Refs} = Elem,
-                  Tag, AllElems) ->
+                  Tag, AllElems, ModName) ->
     CDataLabel = CData#cdata.label,
     HaveCData = have_label(Result, CDataLabel),
     HaveRefs = Refs /= [],
-    HaveXMLs = have_label(Result, '$_xmls'),
     HaveEls = have_label(Result, '$_els'),
+    NewTopXMLNSCall =
+	make_function_call(
+	  {ModName, choose_top_xmlns},
+	  case lists:keyfind(<<"xmlns">>, #attr.name, Attrs) of
+	      #attr{label = L, name = N} ->
+		  if is_list(XMLNS) ->
+			  [label_to_var(prepare_label(L, N)),
+			   erl_syntax:list([abstract(NS) || NS <- XMLNS])];
+		     true ->
+			  [label_to_var(prepare_label(L, N)),
+			   erl_syntax:list([abstract(XMLNS)])]
+		  end;
+	      false when is_list(XMLNS) ->
+		  [?AST(<<>>), erl_syntax:list([abstract(NS) || NS <- XMLNS])];
+	      false ->
+		  [abstract(XMLNS), ?AST([])]
+	  end ++ [?AST(__TopXMLNS)]),
     SubElGenerator = case have_label(Result, '$_els') of
                          true ->
                              erl_syntax:list_comp(
-			       ?AST(encode(_el)),
+			       ?AST('?a(ModName)':encode(_el, __NewTopXMLNS)),
                                [erl_syntax:generator(
                                   ?AST(_el),
                                   label_to_var('$_els'))]);
                          false ->
-                             ?AST([])
-                     end,
-    XmlElGenerator = case {have_label(Result, '$_xmls'),
-                           have_label(Result, '$_els')} of
-                         {true, true} ->
-                             erl_syntax:infix_expr(
-                               label_to_var('$_xmls'),
-                               erl_syntax:operator("++"),
-                               SubElGenerator);
-                         {true, false} ->
-                             label_to_var('$_xmls');
-                         {false, true} ->
-                             SubElGenerator;
-                         {false, false} ->
                              ?AST([])
                      end,
     RefsFun = lists:foldr(
@@ -1301,11 +1737,11 @@ make_elem_enc_fun(#elem{result = Result, attrs = Attrs,
 			Var = label_to_var(Label),
 			make_function_call(
 			  make_enc_fun_name([Label,Tag]),
-			  [Var, Acc])
+			  [Var, ?AST(__NewTopXMLNS), Acc])
 		end, ?AST([]), group_refs(Refs)),
     CDataFun = if HaveRefs and HaveCData ->
 		       make_function_call(
-			 lists, reverse,
+			 {lists, reverse},
 			 [make_function_call(make_enc_fun_name([cdata,Tag]),
 					     [label_to_var(CDataLabel),
 					      RefsFun])]);
@@ -1318,28 +1754,32 @@ make_elem_enc_fun(#elem{result = Result, attrs = Attrs,
                   true ->
 		       ?AST([])
                end,
-    ResFun = if (HaveCData or HaveRefs) and (HaveXMLs or HaveEls) ->
-		     ?AST('?XmlElGenerator' ++ '?CDataFun');
+    ResFun = if (HaveCData or HaveRefs) and HaveEls ->
+		     ?AST('?SubElGenerator' ++ '?CDataFun');
 		HaveCData or HaveRefs ->
 		     CDataFun;
-		HaveXMLs or HaveEls ->
-		     XmlElGenerator;
+		HaveEls ->
+		     SubElGenerator;
 		true ->
 		     ?AST([])
 	     end,
     AttrFun = lists:foldl(
-                fun(#attr{name = AttrName, label = AttrLabel}, Acc) ->
+                fun(#attr{name = AttrName, label = AttrLabel}, Acc)
+		      when AttrName /= <<"xmlns">> ->
                         Var = label_to_var(prepare_label(AttrLabel, AttrName)),
                         make_function_call(
                           make_enc_fun_name([AttrName,attr,Tag]),
-                          [Var, Acc])
-                end, ?AST(_xmlns_attrs), Attrs),
+                          [Var, Acc]);
+		   (_, Acc) ->
+			Acc
+                end, ?AST('?a(ModName)':enc_xmlns_attrs(__NewTopXMLNS, __TopXMLNS)), Attrs),
     [erl_syntax:function(
        erl_syntax:atom(make_enc_fun_name([Tag])),
        [erl_syntax:clause(
-          [subst_labels(Result), ?AST(_xmlns_attrs)],
+          [subst_labels(Result), ?AST(__TopXMLNS)],
           none,
-          [?AST(_els = '?ResFun'),
+          [?AST(__NewTopXMLNS = '?NewTopXMLNSCall'),
+	   ?AST(_els = '?ResFun'),
 	   ?AST(_attrs = '?AttrFun'),
 	   ?AST({xmlel, '?a(ElemName)', _attrs, _els})
           ])])] ++ make_ref_enc_funs(Elem, Tag, AllElems).
@@ -1367,7 +1807,7 @@ make_decoding_MFA(Parents, TagName, _TagNS, AttrName,
     Body = case DecMFA of
                {M, F, Args} ->
                    make_function_call(
-                     M, F,
+                     {M, F},
                      [?AST(_val)|
                       [abstract(Arg) || Arg <- Args]]);
                {F, Args} ->
@@ -1398,6 +1838,8 @@ make_decoding_MFA(Parents, TagName, _TagNS, AttrName,
 		 ?AST(_val)], none, [Catch]),
     [erl_syntax:function(erl_syntax:atom(FunName), [Clause1, Clause2])].
 
+make_encoding_MFA(_, <<"xmlns">>, _, _, _) ->
+    [];
 make_encoding_MFA(Parents, AttrName, Required, AttrDefault, EncMFA) ->
     Clause1 = if Required ->
                       [];
@@ -1411,7 +1853,7 @@ make_encoding_MFA(Parents, AttrName, Required, AttrDefault, EncMFA) ->
     Body = case EncMFA of
                {M, F, Args} ->
                    make_function_call(
-                     M, F,
+                     {M, F},
                      [?AST(_val)|
                       [abstract(Arg) || Arg <- Args]]);
                {F, Args} ->
@@ -1437,6 +1879,9 @@ make_encoding_MFA(Parents, AttrName, Required, AttrDefault, EncMFA) ->
        Clause1 ++ Clause2)].
 
 make_dec_fun_name(Vars) ->
+    make_dec_fun_name(undefined, undefined, Vars).
+
+make_dec_fun_name(ParentMod, Mod, Vars) ->
     NewVars = lists:foldl(
                 fun(Var, Acc) when is_binary(Var) ->
                         [binary_to_list(Var)|Acc];
@@ -1445,9 +1890,16 @@ make_dec_fun_name(Vars) ->
                    (Var, Acc) ->
                         [Var|Acc]
                 end, [], Vars),
-    "decode_" ++ string:join(NewVars, "_").
+    Fun = "decode_" ++ string:join(NewVars, "_"),
+    if Mod == undefined -> Fun;
+       ParentMod == Mod -> Fun;
+       true -> {Mod, Fun}
+    end.
 
 make_enc_fun_name(Vars) ->
+    make_enc_fun_name(undefined, undefined, Vars).
+
+make_enc_fun_name(ParentMod, Mod, Vars) ->
     NewVars = lists:foldl(
                 fun(Var, Acc) when is_binary(Var) ->
                         [binary_to_list(Var)|Acc];
@@ -1456,7 +1908,11 @@ make_enc_fun_name(Vars) ->
                    (Var, Acc) ->
                         [Var|Acc]
                 end, [], Vars),
-    "encode_" ++ string:join(NewVars, "_").
+    Fun = "encode_" ++ string:join(NewVars, "_"),
+    if Mod == undefined -> Fun;
+       ParentMod == Mod -> Fun;
+       true -> {Mod, Fun}
+    end.
 
 %% Fun(Args) -> Body.
 make_function(Fun, Args, Body) ->
@@ -1464,17 +1920,14 @@ make_function(Fun, Args, Body) ->
       erl_syntax:atom(Fun),
       [erl_syntax:clause(Args, none, Body)]).
 
-%% Fun(Args).
+make_function_call({Mod, Fun}, Args) ->
+    erl_syntax:application(
+      erl_syntax:atom(Mod),
+      erl_syntax:atom(Fun),
+      Args);
 make_function_call(Fun, Args) ->
     erl_syntax:application(
       none,
-      erl_syntax:atom(Fun),
-      Args).
-
-%% Mod:Fun(Args).
-make_function_call(Mod, Fun, Args) ->
-    erl_syntax:application(
-      erl_syntax:atom(Mod),
       erl_syntax:atom(Fun),
       Args).
 
@@ -1489,20 +1942,6 @@ abstract(Term) ->
 
 a(Term) ->
     abstract(Term).
-
-is_my_top_xmlns(XMLNS, TopXMLNS) when is_list(XMLNS), is_list(TopXMLNS) ->
-    case sets:is_disjoint(sets:from_list(XMLNS), sets:from_list(TopXMLNS)) of
-	true ->
-	    {false, hd(XMLNS)};
-	false ->
-	    true
-    end;
-is_my_top_xmlns(XMLNS, TopXMLNS) when is_list(XMLNS) ->
-    is_my_top_xmlns(XMLNS, [TopXMLNS]);
-is_my_top_xmlns(XMLNS, TopXMLNS) when is_list(TopXMLNS) ->
-    is_my_top_xmlns([XMLNS], TopXMLNS);
-is_my_top_xmlns(XMLNS, TopXMLNS) ->
-    is_my_top_xmlns([XMLNS], [TopXMLNS]).
 
 label_to_var(Label) ->
     case atom_to_list(Label) of
@@ -1531,11 +1970,25 @@ label_to_record_field(Label) ->
     case atom_to_list(Label) of
         "$_els" ->
             sub_els;
-        "$_xmls" ->
-            xml_els;
         [$$|T] ->
             list_to_atom(T)
     end.
+
+record_fields_to_vars(Name, Fields) ->
+    record_fields_to_vars(Name, Fields, []).
+
+record_fields_to_vars(Name, Fields, Replace) ->
+    FList = lists:map(
+	      fun(Field) ->
+		      case lists:keyfind(Field, 1, Replace) of
+			  {_, AbstractVal} ->
+			      AbstractVal;
+			  false ->
+			      erl_syntax:variable(
+				[$_|atom_to_list(Field)])
+		      end
+	      end, Fields),
+    erl_syntax:tuple([erl_syntax:atom(Name)|FList]).
 
 prepare_label(Label, Name) when is_atom(Name) ->
     prepare_label(Label, erlang:atom_to_binary(Name, utf8));
@@ -1562,6 +2015,9 @@ labels_to_underscores(Term) ->
     labels_to_underscores(Term, []).
 
 labels_to_underscores(Term, Except) ->
+    labels_to_underscores(Term, Except, []).
+
+labels_to_underscores(Term, Except, Replace) ->
     erl_syntax_lib:map(
       fun(T) ->
               try
@@ -1571,7 +2027,12 @@ labels_to_underscores(Term, Except) ->
 		      true ->
 			  label_to_var(Label);
 		      false ->
-			  ?AST(_)
+			  case lists:keyfind(Label, 1, Replace) of
+			      {_, Value} ->
+				  abstract(Value);
+			      false ->
+				  ?AST(_)
+			  end
 		  end
               catch _:_ ->
                       T
@@ -1592,9 +2053,12 @@ have_label(Term, Label) ->
               end
       end, false, abstract(Term)).
 
-get_fun_return_type({dec_enum, [Atoms]}) ->
+get_fun_return_type(Fun, FunSpecs) ->
+    get_fun_return_type(Fun, FunSpecs, dict:new()).
+
+get_fun_return_type({dec_enum, [Atoms]}, _, _) ->
     erl_types:t_atoms(Atoms);
-get_fun_return_type({dec_int, [Min, _]}) ->
+get_fun_return_type({dec_int, [Min, _]}, _, _) ->
     if Min > 0 ->
             erl_types:t_pos_integer();
        Min == 0 ->
@@ -1602,12 +2066,32 @@ get_fun_return_type({dec_int, [Min, _]}) ->
        Min < 0 ->
             erl_types:t_integer()
     end;
-get_fun_return_type({dec_int, []}) ->
+get_fun_return_type({dec_int, []}, _, _) ->
     erl_types:t_integer();
-get_fun_return_type(undefined) ->
-    erl_types:t_binary();
-get_fun_return_type(_) ->
-    erl_types:t_var('any()').
+get_fun_return_type({F, Args}, FunSpecs, _) ->
+    case dict:find({F, length(Args) + 1}, FunSpecs) of
+	{ok, Spec} ->
+	    Type = t_from_form(Spec),
+	    case erl_types:t_is_any(Type) of
+		true -> Spec;
+		false -> Type
+	    end;
+	_ ->
+	    erl_types:t_any()
+    end;
+get_fun_return_type({M, F, Args}, FunSpecs, _) ->
+    case dict:find({M, F, length(Args) + 1}, FunSpecs) of
+	{ok, Spec} ->
+	    Type = t_from_form(Spec),
+	    case erl_types:t_is_any(Type) of
+		true -> Spec;
+		false -> Type
+	    end;
+	_ ->
+	    erl_types:t_any()
+    end;
+get_fun_return_type(undefined, _, _) ->
+    erl_types:t_binary().
 
 term_is_record(Term) ->
     try
@@ -1617,6 +2101,11 @@ term_is_record(Term) ->
     catch _:_ ->
             false
     end.
+
+%% This is a copy-paste from erl_types.erl and probably will
+%% be broken from time to time in new OTP releases.
+t_identifier(Elem) ->
+    {c, identifier, ordsets:from_list([Elem]), unknown}.
 
 term_to_t([H|T], LabelTypes) ->
     erl_types:t_cons(term_to_t(H, LabelTypes), term_to_t(T, LabelTypes));
@@ -1628,6 +2117,8 @@ term_to_t(T, LabelTypes) when is_atom(T) ->
             {_, {Type, Default, IsRequired}} = lists:keyfind(T, 1, LabelTypes),
             if IsRequired ->
                     Type;
+	       ?is_raw_type(Type) ->
+		    Type;
                true ->
                     erl_types:t_sup(Type, erl_types:t_from_term(Default))
             end;
@@ -1659,10 +2150,12 @@ term_to_t(T, LabelTypes) when is_tuple(T) ->
               [term_to_t(E, LabelTypes) || E <- tuple_to_list(T)])
     end.
 
+is_subtype(_Term, Type) when ?is_raw_type(Type) ->
+    false;
 is_subtype(Term, Type) ->
     erl_types:t_is_subtype(erl_types:t_from_term(Term), Type).
 
-get_types(TaggedElems) ->
+get_types(TaggedElems, FunSpecs, Opts) ->
     G = build_ref_deps(TaggedElems),
     SortedTags = digraph_utils:topsort(G),
     TypesDict = lists:foldl(
@@ -1673,12 +2166,12 @@ get_types(TaggedElems) ->
                           LabelTypes =
                               lists:map(
                                 fun(Label) ->
-                                        {Label, get_label_type(Label, RefElem, Dict)}
+                                        {Label, get_label_type(Label, RefElem, Dict, FunSpecs, Opts)}
                                 end, Labels),
                           Type = term_to_t(Result, LabelTypes),
                           dict:store(RefName, Type, Dict)
                   end, dict:new(), SortedTags),
-    RecDict = dict:from_list(
+    RecDict = dict_from_list(
                 lists:flatmap(
                   fun({Tag, _T}) ->
                           RefElem = get_elem_by_ref(Tag, TaggedElems),
@@ -1704,16 +2197,27 @@ extract_labels_from_term(Term) ->
               end
       end, [], abstract(Term)).
 
-get_label_type(Label, Elem, Dict) ->
+get_label_type(Label, Elem, Dict, FunSpecs, Opts) ->
+    XMLType = t_remote(fxml, xmlel),
     case get_spec_by_label(Label, Elem) of
         sub_els ->
-            {erl_types:t_list(), [], false};
-        xml_els ->
-            {erl_types:t_list(), [], false};
+	    T = case proplists:get_value(add_type_specs, Opts) of
+		    SpecName when is_atom(SpecName), SpecName /= undefined ->
+			erl_types:t_sup([XMLType, t_identifier(SpecName)]);
+		    _ ->
+			erl_types:t_any()
+		end,
+            {erl_types:t_list(T), [], false};
+	'_' ->
+	    {erl_types:t_from_term(undefined), [], false};
+	#attr{dec = undefined, default = Default, required = IsRequired} ->
+	    {erl_types:t_binary(), Default, IsRequired};
         #attr{dec = DecFun, default = Default, required = IsRequired} ->
-            {get_fun_return_type(DecFun), Default, IsRequired};
+	    {get_fun_return_type(DecFun, FunSpecs), Default, IsRequired};
+	#cdata{dec = undefined, default = Default, required = IsRequired} ->
+	    {erl_types:t_binary(), Default, IsRequired};
         #cdata{dec = DecFun, default = Default, required = IsRequired} ->
-            {get_fun_return_type(DecFun), Default, IsRequired};
+	    {get_fun_return_type(DecFun, FunSpecs), Default, IsRequired};
         [#ref{min = Min, max = Max, default = Default}|_] = Refs ->
             Types = lists:flatmap(
                       fun(#ref{name = RefTag}) ->
@@ -1726,6 +2230,8 @@ get_label_type(Label, Elem, Dict) ->
             IsRequired = (Min == 1) and (Max == 1),
             if Max == 1 ->
                     {Type, Default, IsRequired};
+	       ?is_raw_type(Type) ->
+		    {{type, element(2, Type), list, [Type]}, [], false};
                true ->
                     {erl_types:t_list(
                        erl_types:t_subtract(
@@ -1761,60 +2267,46 @@ get_abstract_code_from_myself() ->
             error
     end.
 
-%% make_type_spec(RefTag, {_, TypesDict, RecDict}) ->
-%%     ResType = dict:fetch(RefTag, TypesDict),
-%%     FunName = make_dec_fun_name([RefTag]),
-%%     erl_syntax:text("-spec " ++ FunName ++ "(#xmlel{}) -> "
-%%                     ++ erl_types:t_to_string(ResType, RecDict) ++ ".").
-
-%% make_decoding_MFA_type_spec(FunName, Default, DecMFA, IsRequired,
-%%                             {_, _, RecTypes}) ->
-%%     DefType = erl_types:t_to_string(erl_types:t_from_term(Default), RecTypes),
-%%     OutDefType = if IsRequired ->
-%%                          erl_types:t_to_string(erl_types:t_none());
-%%                     true ->
-%%                          DefType
-%%                  end,
-%%     Indent = lists:duplicate(length(FunName) + 6, $ ),
-%%     C1 = "(" ++ DefType ++ ") -> " ++ OutDefType ++ ";" ++ io_lib:nl(),
-%%     C2 = "(binary()) -> " ++ erl_types:t_to_string(
-%%                                get_fun_return_type(DecMFA),
-%%                                RecTypes) ++ ".",
-%%     FunName1 = atom_to_string(list_to_atom(FunName)),
-%%     erl_syntax:text("-spec " ++ FunName1 ++ C1 ++ Indent ++ C2).
-
 %%====================================================================
 %% Auxiliary functions
 %%====================================================================
+resolver_mod(Mod) ->
+    list_to_atom(atom_to_list(Mod) ++ "_external").
+
 %% Checks
-prepare_elem(#elem{name = Name}, _, _, _)
+prepare_elem(#elem{name = Name}, _, _, _, _, _)
   when not is_binary(Name) ->
     bad_spec({wrong_name, Name});
-prepare_elem(#elem{name = Name, xmlns = XMLNS}, _, _, _)
+prepare_elem(#elem{module = Mod}, _, _, _, _, _) when not is_atom(Mod) ->
+    bad_spec({wrong_module, Mod});
+prepare_elem(#elem{name = Name, xmlns = XMLNS}, _, _, _, _, _)
   when not is_binary(XMLNS), not is_list(XMLNS) ->
     bad_spec({wrong_xmlns, XMLNS, Name});
-prepare_elem(#elem{name = Name, refs = Refs}, _, _, _) when not is_list(Refs) ->
+prepare_elem(#elem{name = Name, refs = Refs}, _, _, _, _, _) when not is_list(Refs) ->
     bad_spec({wrong_refs, Refs, Name});
-prepare_elem(#elem{name = Name, attrs = Attrs}, _, _, _) when not is_list(Attrs) ->
+prepare_elem(#elem{name = Name, attrs = Attrs}, _, _, _, _, _) when not is_list(Attrs) ->
     bad_spec({wrong_attrs, Attrs, Name});
 prepare_elem(#elem{name = Name, attrs = Attrs, xmlns = XMLNS,
-                   cdata = CData, refs = Refs} = Elem,
-             KnownFunctions, AllElems, Opts) ->
-    case proplists:get_bool(ignore_xmlns, Opts) of
-        false when XMLNS == <<>> ->
+                   cdata = CData, refs = Refs, module = Mod} = Elem,
+             KnownFunctions, FunSpecs, AllElems, ModName, _Opts) ->
+    if XMLNS == <<>> ->
             bad_spec({empty_xmlns, Name});
-        _ ->
+       true ->
             ok
     end,
     NewAttrs = lists:map(
-                 fun(Attr) -> prepare_attr(Name, Attr, KnownFunctions) end,
-                 Attrs),
-    NewCData = prepare_cdata(Name, CData, KnownFunctions),
+                 fun(Attr) ->
+			 prepare_attr(Name, Attr, KnownFunctions, FunSpecs, ModName)
+		 end, Attrs),
+    NewCData = prepare_cdata(Name, CData, KnownFunctions, FunSpecs, ModName),
     NewRefs = lists:map(
                 fun(Ref) -> prepare_ref(Name, Ref, AllElems) end,
                 Refs),
     check_labels(Elem),
-    Elem#elem{attrs = NewAttrs, cdata = NewCData, refs = NewRefs}.
+    NewMod = if Mod == undefined -> ModName;
+		true -> Mod
+	     end,
+    Elem#elem{attrs = NewAttrs, cdata = NewCData, refs = NewRefs, module = NewMod}.
 
 prepare_ref(Name, #ref{name = RefName}, _)
   when not is_atom(RefName) ->
@@ -1843,45 +2335,61 @@ prepare_ref(Name, #ref{name = RefName, label = Label} = Ref, AllElems) ->
 prepare_ref(Name, Junk, _) ->
     bad_spec({not_ref_spec, Junk, Name}).
 
-prepare_attr(Name, #attr{name = AName}, _)
+prepare_default('$unset', DecFun, _IsRequired, FunSpecs) ->
+    T = get_fun_return_type(DecFun, FunSpecs),
+    case erl_types:t_is_binary(T) of
+	true -> <<"">>;
+	_ -> undefined
+    end;
+prepare_default(Default, _DecFun, false, _FunSpecs) ->
+    Default;
+prepare_default(Default, _DecFun, true, _FunSpecs) ->
+    bad_spec({default_must_be_unset, Default}).
+
+prepare_attr(Name, #attr{name = AName}, _, _, _)
   when not is_binary(AName) ->
     bad_spec({wrong_attr_name, AName, Name});
-prepare_attr(Name, #attr{name = AName, label = Label}, _)
+prepare_attr(Name, #attr{name = AName, label = Label}, _, _, _)
   when not is_atom(Label) ->
     bad_spec({wrong_attr_label, Label, AName, Name});
-prepare_attr(Name, #attr{name = AName, required = Req}, _)
+prepare_attr(Name, #attr{name = AName, required = Req}, _, _, _)
   when not (Req == false orelse Req == true) ->
     bad_spec({wrong_attr_required, Req, AName, Name});
 prepare_attr(Name, #attr{name = AName, label = Label,
-                         dec = DecF, enc = EncF} = Attr, KnownFunctions) ->
-    NewDecFun = prep_dec_fun(DecF, KnownFunctions),
-    NewEncFun = prep_enc_fun(EncF, KnownFunctions),
+			 default = Default, required = IsRequired,
+                         dec = DecF, enc = EncF} = Attr,
+	     KnownFunctions, FunSpecs, ModName) ->
+    NewDefault = prepare_default(Default, DecF, IsRequired, FunSpecs),
+    NewDecFun = prep_dec_fun(DecF, KnownFunctions, ModName),
+    NewEncFun = prep_enc_fun(EncF, KnownFunctions, ModName),
     case (is_label(Label) or (Label == undefined)) of
         false ->
             bad_spec({wrong_attr_label_format, Label, AName, Name});
         true ->
-            Attr#attr{dec = NewDecFun, enc = NewEncFun}
+            Attr#attr{dec = NewDecFun, enc = NewEncFun, default = NewDefault}
     end;
-prepare_attr(Name, Junk, _) ->
+prepare_attr(Name, Junk, _, _, _) ->
     bad_spec({not_attr_spec, Junk, Name}).
 
-prepare_cdata(Name, #cdata{label = Label}, _)
+prepare_cdata(Name, #cdata{label = Label}, _, _, _)
   when not is_atom(Label) ->
     bad_spec({wrong_cdata_label, Label, Name});
-prepare_cdata(Name, #cdata{required = Req}, _)
+prepare_cdata(Name, #cdata{required = Req}, _, _, _)
   when not (Req == false orelse Req == true) ->
     bad_spec({wrong_cdata_required, Req, Name});
-prepare_cdata(Name, #cdata{label = Label, dec = DecF, enc = EncF} = CData,
-                 KnownFunctions) ->
-    NewDecFun = prep_dec_fun(DecF, KnownFunctions),
-    NewEncFun = prep_enc_fun(EncF, KnownFunctions),
+prepare_cdata(Name, #cdata{label = Label, dec = DecF, enc = EncF,
+			   default = Default, required = IsRequired} = CData,
+                 KnownFunctions, FunSpecs, ModName) ->
+    NewDefault = prepare_default(Default, DecF, IsRequired, FunSpecs),
+    NewDecFun = prep_dec_fun(DecF, KnownFunctions, ModName),
+    NewEncFun = prep_enc_fun(EncF, KnownFunctions, ModName),
     case (is_label(Label) or (Label == undefined)) of
         false ->
             bad_spec({wrong_cdata_label_format, Label, Name});
         true ->
-            CData#cdata{enc = NewEncFun, dec = NewDecFun}
+            CData#cdata{enc = NewEncFun, dec = NewDecFun, default = NewDefault}
     end;
-prepare_cdata(Name, Junk, _) ->
+prepare_cdata(Name, Junk, _, _, _) ->
     bad_spec({not_cdata_spec, Junk, Name}).
 
 get_dups(L) ->
@@ -1920,7 +2428,10 @@ check_labels(#elem{result = Result, attrs = Attrs,
                           L
                   end, group_refs(Refs)),
     AllLabels = AttrLabels ++ [CDataLabel] ++ RefLabels,
-    case get_dups(ResultLabels) of
+    case get_dups(lists:filter(
+		    fun('$_') -> false;
+		       (_) -> true
+		    end, ResultLabels)) of
         Dups1 when Dups1 /= [] ->
             bad_spec({duplicated_labels, Dups1});
         _ ->
@@ -1935,7 +2446,7 @@ check_labels(#elem{result = Result, attrs = Attrs,
     ResultSet = sets:from_list(ResultLabels),
     AllSet = sets:from_list(AllLabels),
     UnresolvedLabels = sets:to_list(
-                         sets:subtract(ResultSet, AllSet)) -- ['$_els', '$_xmls'],
+                         sets:subtract(ResultSet, AllSet)) -- ['$_els', '$_'],
     UnusedLabels = sets:to_list(sets:subtract(AllSet, ResultSet)) -- ['$cdata'],
     if UnresolvedLabels /= [] ->
             bad_spec({unresolved_labels, UnresolvedLabels});
@@ -1979,10 +2490,10 @@ check_group(Label, Refs) ->
             bad_spec({different_defaults_in_group, Label})
     end.
 
-prep_dec_fun({Mod, Fun, Args}, _)
+prep_dec_fun({Mod, Fun, Args}, _, _)
   when is_atom(Mod) andalso is_atom(Fun) andalso is_list(Args) ->
     {Mod, Fun, Args};
-prep_dec_fun({Fun, Args}, KnownFunctions)
+prep_dec_fun({Fun, Args}, KnownFunctions, _ModName)
   when is_atom(Fun) andalso is_list(Args) ->
     Arity = length(Args) + 1,
     case erlang:function_exported(?MODULE, Fun, Arity) of
@@ -1996,15 +2507,15 @@ prep_dec_fun({Fun, Args}, KnownFunctions)
                     bad_spec({unknown_dec_fun, {Fun, Args}})
             end
     end;
-prep_dec_fun(undefined, _) ->
+prep_dec_fun(undefined, _, _) ->
     undefined;
-prep_dec_fun(Junk, _) ->
+prep_dec_fun(Junk, _, _) ->
     bad_spec({invalid_dec_fun, Junk}).
 
-prep_enc_fun({Mod, Fun, Args}, _)
+prep_enc_fun({Mod, Fun, Args}, _, _)
   when is_atom(Mod) andalso is_atom(Fun) andalso is_list(Args) ->
     {Mod, Fun, Args};
-prep_enc_fun({Fun, Args}, KnownFunctions)
+prep_enc_fun({Fun, Args}, KnownFunctions, _ModName)
   when is_atom(Fun) andalso is_list(Args) ->
     Arity = length(Args) + 1,
     case erlang:function_exported(?MODULE, Fun, Arity) of
@@ -2018,9 +2529,9 @@ prep_enc_fun({Fun, Args}, KnownFunctions)
                     bad_spec({unknown_enc_fun, {Fun, Args}})
             end
     end;
-prep_enc_fun(undefined, _) ->
+prep_enc_fun(undefined, _, _) ->
     undefined;
-prep_enc_fun(Junk, _) ->
+prep_enc_fun(Junk, _, _) ->
     bad_spec({invalid_enc_fun, Junk}).
 
 is_label(Label) when not is_atom(Label) ->
@@ -2029,8 +2540,8 @@ is_label(Label) ->
     case atom_to_list(Label) of
         "$_els" ->
             true;
-        "$_xmls" ->
-            true;
+	"$_" ->
+	    true;
         [$$,$_|_] ->
             false;
         [$$,$-|_] ->
@@ -2212,3 +2723,41 @@ transform_spec_to_form([{'-', L0}, {atom, _, 'xml'}, {'(', _}|T]) ->
     end;
 transform_spec_to_form(_) ->
     not_spec.
+
+-ifdef(HAVE_REMOTE_TYPES).
+-ifdef(HAVE_FROM_FORM0).
+
+t_from_form(Spec) ->
+    erl_types:t_from_form(Spec).
+-else.
+t_from_form(Spec) ->
+    erl_types:t_from_form(Spec, sets:new(), {spec, foo}, dict:new()).
+-endif.
+
+t_remote(Mod, Type) ->
+    erl_types:t_remote(Mod, Type, []).
+-else.
+t_from_form(Spec) ->
+    {T, _} = erl_types:t_from_form(
+	       Spec, sets:new(), {type, {mod, foo, 1}}, dict:new(),
+	       erl_types:var_table__new(), erl_types:cache__new()),
+    T.
+
+t_remote(Mod, Type) ->
+    D = dict_from_list([{{opaque, Type, []},
+			 {{Mod, 1, 2, []}, type}}]),
+    [T] = erl_types:t_opaque_from_records(D),
+    T.
+-endif.
+
+-ifdef(USE_DICT).
+dict_from_list(L) ->
+    dict:from_list(L).
+dict_keys(D) ->
+    dict:fetch_keys(D).
+-else.
+dict_from_list(L) ->
+    maps:from_list(L).
+dict_keys(D) ->
+    maps:keys(D).
+-endif.

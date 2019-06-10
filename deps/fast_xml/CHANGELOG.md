@@ -1,3 +1,100 @@
+# Version 1.1.36
+
+* Updating p1_utils to version 1.0.15.
+
+# Version 1.1.35
+
+* Updating p1_utils to version 1.0.14.
+* Add contribution guide
+
+# Version 1.1.34
+
+* Updating p1_utils to version 1.0.13.
+
+# Version 1.1.33
+
+* Updating p1_utils to version 6ff85e8.
+* Fix incompatibility with OTP21
+
+# Version 1.1.32
+
+* Don't crash when trying to encode xmlcdata
+
+# Version 1.1.31
+
+* Updating p1_utils to version 1.0.12.
+
+# Version 1.1.30
+
+* Improve detection of rebar3
+* Define p1\_utils as application dependency
+
+# Version 1.1.29
+
+* Updating p1_utils to version 1.0.11.
+* Fix compilation with rebar3
+* Get rid of $\_xmls label
+
+# Version 1.1.28
+* Include Makefile in package generated for hex
+
+# Version 1.1.27
+
+* Freeze dependencies in mix.lock file to be more friendly with hex.pm
+* Fix ambiguous Elixir syntax in mix.exs
+
+# Version 1.1.26
+
+* Simplify pretty printer generation
+* Generate get_els/1 and set_els/2
+* The pretty printer should traverse elements recursively
+* Extra test for too big input
+
+# Version 1.1.25
+
+* Invalidate sotred data when generating stanza-too-big-error
+
+# Version 1.1.24
+
+* Updating p1_utils to version 1.0.10.
+* Make XML generator work on R19.3+
+
+# Version 1.1.23
+
+* depends on p1_utils-1.0.9
+
+# Version 1.1.22
+
+* Fix md5 sum calculation of modules for OTP17 (Evgeniy Khramtsov)
+* Fix type spec for fxml_stream:parse_element/1 (Evgeniy Khramtsov)
+
+# Version 1.1.21
+
+* Add code for building on FreeBSD (Dave Cottlehuber)
+
+# Version 1.1.20
+
+* Make XML generator working on OTP 18 (Evgeniy Khramtsov)
+
+# Version 1.1.19
+
+* Add checks for empty string (Paweł Chmielowski)
+* Remove unused code (Paweł Chmielowski)
+* Load locally build .so file when performing tests (Paweł Chmielowski)
+
+# Version 1.1.18
+
+* Use p1_utils 1.0.6 (Paweł Chmielowski)
+* fix xref with otp 17 (Paweł Chmielowski)
+
+# Version 1.1.17
+
+* Add 'undefined' type to some record fields type specs (Evgeniy Khramtsov)
+
+# Version 1.1.16
+
+* Improve XML generator (Evgeniy Khramtsov)
+
 # Version 1.1.15
 
 * Update to p1_utils 1.0.5 (Mickaël Rémond)
