@@ -7055,13 +7055,6 @@ ALTER TABLE ONLY public.login_data
 
 
 --
--- Name: login_data_ip_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX login_data_ip_idx ON public.login_data USING gist (ip);
-
-
---
 -- Name: login_data_login_time_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
