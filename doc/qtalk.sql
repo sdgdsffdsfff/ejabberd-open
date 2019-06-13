@@ -7053,6 +7053,11 @@ ALTER TABLE ONLY public.login_data ALTER COLUMN id SET DEFAULT nextval('public.l
 ALTER TABLE ONLY public.login_data
     ADD CONSTRAINT login_data_pkey PRIMARY KEY (id);
 
+--
+-- Name: login_data_ip_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+-- CREATE INDEX login_data_ip_idx ON public.login_data USING gist (ip inet_ops);
 
 --
 -- Name: login_data_login_time_idx; Type: INDEX; Schema: public; Owner: postgres
