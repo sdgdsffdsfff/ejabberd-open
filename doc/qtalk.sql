@@ -6938,7 +6938,7 @@ CREATE TABLE public.login_data (
     host character varying(255) NOT NULL,
     resource character varying(255) NOT NULL,
     platform character varying(255) NOT NULL,
-    ip public.ip4r,
+    ip inet,
     login_time timestamp with time zone DEFAULT now(),
     logout_at timestamp with time zone DEFAULT now(),
     record_type character varying(255) NOT NULL
