@@ -5349,12 +5349,16 @@ handle_service_message(Msg ,IJID,StateData) ->
 
 make_invite_text(Jid,Invite,IServer,StateData) ->
     INick = qtalk_public:get_nick(Invite,IServer),
-    Nick = find_nick_by_jid(jlib:jid_remove_resource(Jid), StateData),
-    case length((?DICT):to_list(StateData#state.users)) =:= 1 of
+    Nick = qtalk_public:get_nick(Jid#jid.luser, Jid#jid.lserver),
+    case (?DICT):size(StateData#state.users) =:= 1 of
     true ->
         case Nick =/= INick of
         true -> list_to_binary([Nick, <<" 邀请 "/utf8>>,INick,<<" 进入聊天室."/utf8>>]);
-        false -> list_to_binary([Nick, <<" 创建聊天室."/utf8>>])
+        false ->
+            case (?DICT):find(jlib:make_jid(Invite,IServer, <<"">>), StateData#state.users) of
+                error -> list_to_binary([INick,<<" 进入聊天室."/utf8>>]);
+                {ok, _} -> list_to_binary([Nick, <<" 创建聊天室."/utf8>>])
+            end
         end;
     false ->
         case Nick =:= INick of
