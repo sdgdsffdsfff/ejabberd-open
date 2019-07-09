@@ -649,6 +649,9 @@ CREATE TABLE public.host_users (
     leader text,
     initialpwd smallint DEFAULT 1 NOT NULL,
     pwd_salt character varying(200),
+    leader character varying(200),
+    hrbp character varying(200),
+    user_role integer DEFAULT 0 NOT NULL,
     ps_deptid text DEFAULT 'QUNAR'::text
 );
 
