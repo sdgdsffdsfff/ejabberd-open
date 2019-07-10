@@ -646,7 +646,6 @@ CREATE TABLE public.host_users (
     hire_flag smallint DEFAULT 1 NOT NULL,
     gender smallint DEFAULT 0 NOT NULL,
     password text,
-    leader text,
     initialpwd smallint DEFAULT 1 NOT NULL,
     pwd_salt character varying(200),
     leader character varying(200),
