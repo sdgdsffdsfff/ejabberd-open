@@ -591,6 +591,9 @@ CREATE TABLE public.host_info (
     host text NOT NULL,
     description text,
     create_time timestamp with time zone DEFAULT now() NOT NULL,
+    host_type int not null default 0,
+    host_qrcode varchar(1000),
+    need_approve int not null default 0,
     host_admin text NOT NULL
 );
 
@@ -651,6 +654,9 @@ CREATE TABLE public.host_users (
     leader character varying(200),
     hrbp character varying(200),
     user_role integer DEFAULT 0 NOT NULL,
+    approve_flag int default 1,
+    user_desc varchar(1024),
+    user_origin int default 0,
     ps_deptid text DEFAULT 'QUNAR'::text
 );
 
@@ -3490,6 +3496,7 @@ CREATE INDEX host_users_host_id_idx ON public.host_users USING btree (host_id);
 --
 
 CREATE INDEX host_users_user_id_idx ON public.host_users USING btree (user_id);
+CREATE INDEX host_users_host_id_idx ON public.host_id USING btree (host_id);
 
 
 --
