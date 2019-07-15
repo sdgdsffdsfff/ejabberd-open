@@ -1290,7 +1290,7 @@ CREATE TABLE public.notice_history (
     msg_id text NOT NULL,
     m_from text NOT NULL,
     m_body text NOT NULL,
-    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    create_time timestamp with time zone DEFAULT (now())::timestamp(3) NOT NULL,
     host text DEFAULT 'ejabhost1'::text NOT NULL
 );
 
