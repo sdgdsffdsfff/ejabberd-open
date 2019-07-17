@@ -190,6 +190,169 @@ CREATE TABLE public.admin_user (
 
 ALTER TABLE public.admin_user OWNER TO ejabberd;
 
+
+--
+-- 
+--
+
+--
+-- Name: login_data; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.login_data (
+    id integer NOT NULL,
+    username character varying(255) NOT NULL,
+    host character varying(255) NOT NULL,
+    resource character varying(255) NOT NULL,
+    platform character varying(255) NOT NULL,
+    ip inet,
+    login_time timestamp with time zone DEFAULT now(),
+    logout_at timestamp with time zone DEFAULT now(),
+    record_type character varying(255) NOT NULL
+);
+
+
+ALTER TABLE public.login_data OWNER TO postgres;
+
+--
+-- Name: TABLE login_data; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.login_data IS 'qtalk登录记录';
+
+
+--
+-- Name: COLUMN login_data.id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.id IS '登录记录ID';
+
+
+--
+-- Name: COLUMN login_data.username; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.username IS '用户名';
+
+
+--
+-- Name: COLUMN login_data.host; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.host IS 'host';
+
+
+--
+-- Name: COLUMN login_data.resource; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.resource IS 'resource';
+
+
+--
+-- Name: COLUMN login_data.platform; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.platform IS '平台';
+
+
+--
+-- Name: COLUMN login_data.ip; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.ip IS '登录ip地址';
+
+
+--
+-- Name: COLUMN login_data.login_time; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.login_time IS '登录时间';
+
+
+--
+-- Name: COLUMN login_data.logout_at; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.logout_at IS '退出时间';
+
+
+--
+-- Name: COLUMN login_data.record_type; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.login_data.record_type IS '类型';
+
+
+--
+-- Name: login_data_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.login_data_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.login_data_id_seq OWNER TO postgres;
+
+--
+-- Name: login_data_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.login_data_id_seq OWNED BY public.login_data.id;
+
+
+--
+-- Name: login_data id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.login_data ALTER COLUMN id SET DEFAULT nextval('public.login_data_id_seq'::regclass);
+
+
+--
+-- Name: login_data login_data_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.login_data
+    ADD CONSTRAINT login_data_pkey PRIMARY KEY (id);
+
+--
+-- Name: login_data_ip_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+-- CREATE INDEX login_data_ip_idx ON public.login_data USING gist (ip inet_ops);
+
+--
+-- Name: login_data_login_time_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX login_data_login_time_idx ON public.login_data USING btree (login_time);
+
+
+--
+-- Name: login_data_logout_at_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX login_data_logout_at_idx ON public.login_data USING btree (logout_at);
+
+
+--
+-- Name: login_data_record_type_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX login_data_record_type_idx ON public.login_data USING btree (record_type);
+
+
+--
+-- Name: login_data_username_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX login_data_username_idx ON public.login_data USING btree (username);
+
 --
 -- TOC entry 207 (class 1259 OID 17249)
 -- Name: client_config_sync; Type: TABLE; Schema: public; Owner: postgres
@@ -6932,166 +7095,3 @@ COMMENT ON EXTENSION plpgsql IS 'PL/pgSQL procedural language';
 --
 -- PostgreSQL database cluster dump complete
 --
-
---
--- 
---
-
---
--- Name: login_data; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.login_data (
-    id integer NOT NULL,
-    username character varying(255) NOT NULL,
-    host character varying(255) NOT NULL,
-    resource character varying(255) NOT NULL,
-    platform character varying(255) NOT NULL,
-    ip inet,
-    login_time timestamp with time zone DEFAULT now(),
-    logout_at timestamp with time zone DEFAULT now(),
-    record_type character varying(255) NOT NULL
-);
-
-
-ALTER TABLE public.login_data OWNER TO postgres;
-
---
--- Name: TABLE login_data; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON TABLE public.login_data IS 'qtalk登录记录';
-
-
---
--- Name: COLUMN login_data.id; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.id IS '登录记录ID';
-
-
---
--- Name: COLUMN login_data.username; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.username IS '用户名';
-
-
---
--- Name: COLUMN login_data.host; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.host IS 'host';
-
-
---
--- Name: COLUMN login_data.resource; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.resource IS 'resource';
-
-
---
--- Name: COLUMN login_data.platform; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.platform IS '平台';
-
-
---
--- Name: COLUMN login_data.ip; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.ip IS '登录ip地址';
-
-
---
--- Name: COLUMN login_data.login_time; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.login_time IS '登录时间';
-
-
---
--- Name: COLUMN login_data.logout_at; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.logout_at IS '退出时间';
-
-
---
--- Name: COLUMN login_data.record_type; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.login_data.record_type IS '类型';
-
-
---
--- Name: login_data_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
---
-
-CREATE SEQUENCE public.login_data_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE public.login_data_id_seq OWNER TO postgres;
-
---
--- Name: login_data_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
---
-
-ALTER SEQUENCE public.login_data_id_seq OWNED BY public.login_data.id;
-
-
---
--- Name: login_data id; Type: DEFAULT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.login_data ALTER COLUMN id SET DEFAULT nextval('public.login_data_id_seq'::regclass);
-
-
---
--- Name: login_data login_data_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.login_data
-    ADD CONSTRAINT login_data_pkey PRIMARY KEY (id);
-
---
--- Name: login_data_ip_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
--- CREATE INDEX login_data_ip_idx ON public.login_data USING gist (ip inet_ops);
-
---
--- Name: login_data_login_time_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX login_data_login_time_idx ON public.login_data USING btree (login_time);
-
-
---
--- Name: login_data_logout_at_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX login_data_logout_at_idx ON public.login_data USING btree (logout_at);
-
-
---
--- Name: login_data_record_type_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX login_data_record_type_idx ON public.login_data USING btree (record_type);
-
-
---
--- Name: login_data_username_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX login_data_username_idx ON public.login_data USING btree (username);
-
