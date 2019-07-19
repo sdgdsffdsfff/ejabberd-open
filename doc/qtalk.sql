@@ -820,6 +820,9 @@ CREATE TABLE public.host_users (
     approve_flag int default 1,
     user_desc varchar(1024),
     user_origin int default 0,
+    hire_type varchar(50) DEFAULT '未知',
+    admin_flag varchar(20) DEFAULT '0',
+    create_time timestamp DEFAULT (now())::timestamp(3),
     ps_deptid text DEFAULT 'QUNAR'::text
 );
 
