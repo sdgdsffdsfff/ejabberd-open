@@ -36,7 +36,7 @@
 ## 4: Info
 ## 5: Debug
 ##
-loglevel: 2
+loglevel: 4
 
 ##
 ## rotation: Describe how to rotate logs. Either size and/or date can trigger
@@ -94,7 +94,7 @@ log_rate_limit: 20000
 ##   - "example.org"
 ##
 hosts:
-  - "qtalk.test.org"
+  - "qtalk"
 
 ##
 ## route_subdomains: Delegate subdomains to other XMPP servers.
@@ -648,8 +648,8 @@ modules:
 ##
 
 allow_contrib_modules: true
-default_host: "qtalk.test.org"
-default_domain: "conference.qtalk.test.org"
+default_host: "qtalk"
+default_domain: "conference.qtalk"
 
 push_url: "http://127.0.0.1:8083/push_service/qtapi/token/sendMessageToPush.qunar"
 
