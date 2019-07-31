@@ -404,3 +404,321 @@ insert into host_users (host_id, user_id, user_name, department, dep1, pinyin, f
 insert into vcard_version (username, version, profile_version, gender, host, url) values ('admin', '1', '1', '1', 'yourhost', '/file/v2/download/214b6c4f070cf08a1ed27dbd73fdee5d.png');
 insert into host_users (host_id, user_id, user_name, department, dep1, pinyin, frozen_flag, version, user_type, hire_flag, gender, password, initialpwd, pwd_salt, ps_deptid) values ('1', 'file-transfer', '文件传输助手', '/智能服务助手', '智能服务助手', 'file-transfer', '1', '1', 'U', '1', '1', 'CRY:fd540f073cc09aa98220bbb234153bd5', '1', 'qtalkadmin_pwd_salt_d2bf42081aab47f4ac00697d7dd32993', 'qtalk');
 insert into vcard_version (username, version, profile_version, gender, host, url) values ('file-transfer', '1', '1', '1', 'yourhost', '/file/v2/download/214b6c4f070cf08a1ed27dbd73fdee5d.png');
+
+
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(33,'test','/qtalk_background_management/startalk/management/baseData',1,'{35}',1);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(34,'test','/qtalk_background_management/startalk/management/depList',1,'{}',0);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(35,'test','/qtalk_background_management/startalk/management/dayDataSearch',1,'{}',0);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(36,'test','/qtalk_background_management/startalk/management/dayMsgDataSearch',1,'{34,37}',1);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(37,'test','/qtalk_background_management/startalk/management/userMsgCount',1,'{}' ,0);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(38,'test','/qtalk_background_management/startalk/management/clientVersion',1,'{}' ,1);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(39,'test','/qtalk_background_management/startalk/management/getVersionList',1,'{}',0);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(40,'test','/qtalk_background_management/startalk/management/clickCount',1,'{41,42}',1);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(41,'test','/qtalk_background_management/startalk/management/selectList',1,'{}',0);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(42,'test','/qtalk_background_management/startalk/management/selectModel',1,'{}',0);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(43,'test','/qtalk_background_management/startalk/management/activity',1,'{}',1);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(44,'test','/qtalk_background_management/startalk/management/userOnline',1,'{45}',1);
+INSERT INTO sys_permission(id ,describe,url,status,sub_permission_ids, navigation_flag) VALUES(45,'test','/qtalk_background_management/startalk/management/searchUserOnline',1,'{}',0);
+
+alter sequence sys_permission_id_seq restart with 46;
+
+INSERT into sys_role_permission(role_id, permission_id) VALUES (1,33),(1,34),(1,35),(1,36),(1,37),(1,38),(1,39),(1,40),(1,41),(1,42),(1,43),(1,44),(1,45);
+
+-- auto-generated definition
+CREATE TABLE data_board_day
+(
+  id                 SERIAL                    NOT NULL
+    CONSTRAINT data_board_day_pkey
+    PRIMARY KEY,
+  activity           NUMERIC DEFAULT 0         NOT NULL,
+  client_online_time JSONB                     NOT NULL,
+  start_count        NUMERIC DEFAULT 0         NOT NULL,
+  client_version     JSONB                     NOT NULL,
+  day_msg_count      NUMERIC DEFAULT 0         NOT NULL,
+  day_msg_average    NUMERIC DEFAULT 0         NOT NULL,
+  department_data    JSONB                     NOT NULL,
+  hire_type_data     JSONB                     NOT NULL,
+  create_time        DATE DEFAULT CURRENT_DATE NOT NULL,
+  platform_activity  JSONB,
+  dep_activity       JSONB,
+  hire_type_activity JSONB
+);
+
+CREATE INDEX idx_tb_data_board
+  ON data_board_day (create_time);
+
+COMMENT ON COLUMN data_board_day.activity IS '活跃数';
+
+COMMENT ON COLUMN data_board_day.client_online_time IS '客户端在线时间';
+
+COMMENT ON COLUMN data_board_day.start_count IS '启动次数';
+
+COMMENT ON COLUMN data_board_day.client_version IS '客户端版本统计';
+
+COMMENT ON COLUMN data_board_day.day_msg_count IS '每天消息量';
+
+COMMENT ON COLUMN data_board_day.day_msg_average IS '每天平均消息量';
+
+COMMENT ON COLUMN data_board_day.department_data IS '部门数据统计';
+
+COMMENT ON COLUMN data_board_day.hire_type_data IS '人员类型统计';
+
+COMMENT ON COLUMN data_board_day.create_time IS '创建时间';
+
+COMMENT ON COLUMN data_board_day.platform_activity IS '平台活跃数';
+
+COMMENT ON COLUMN data_board_day.dep_activity IS '部门活跃数';
+
+COMMENT ON COLUMN data_board_day.hire_type_activity IS '人员类型活跃数';
+
+
+-- auto-generated definition
+CREATE TABLE client_upgrade
+(
+  id               SERIAL                                                NOT NULL
+    CONSTRAINT client_upgrade_pkey
+    PRIMARY KEY,
+  client_type      VARCHAR(20)                                           NOT NULL,
+  platform         VARCHAR(50)                                           NOT NULL,
+  version          INTEGER DEFAULT 0                                     NOT NULL,
+  copywriting      VARCHAR(500)                                          NOT NULL,
+  grayscale_status INTEGER DEFAULT 0                                     NOT NULL,
+  grayscale_value  INTEGER      DEFAULT 0,
+  upgrade_status   INTEGER DEFAULT 0                                     NOT NULL,
+  upgrade_url      VARCHAR(200)                                          NOT NULL,
+  create_time      TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  update_time      TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  md5_key          VARCHAR(100) DEFAULT '' :: CHARACTER VARYING,
+  stop_status      INTEGER      DEFAULT 0,
+  stop_reason      VARCHAR(500) DEFAULT '' :: CHARACTER VARYING,
+  updated_count    INTEGER DEFAULT 0                                     NOT NULL
+);
+
+CREATE UNIQUE INDEX client_upgrade_client_type_platform_version_uindex
+  ON client_upgrade (client_type, platform, version);
+
+COMMENT ON COLUMN client_upgrade.id IS '自增id';
+
+COMMENT ON COLUMN client_upgrade.client_type IS '客户端类型 qtalk,qchat';
+
+COMMENT ON COLUMN client_upgrade.platform IS '平台Android,ios';
+
+COMMENT ON COLUMN client_upgrade.version IS '版本号';
+
+COMMENT ON COLUMN client_upgrade.copywriting IS '更新文案';
+
+COMMENT ON COLUMN client_upgrade.grayscale_status IS '灰度测试状态 0:否 1:是';
+
+COMMENT ON COLUMN client_upgrade.grayscale_value IS '灰度量';
+
+COMMENT ON COLUMN client_upgrade.upgrade_status IS '更新状态 0:强制更新 1:选择更新';
+
+COMMENT ON COLUMN client_upgrade.upgrade_url IS '更新地址';
+
+COMMENT ON COLUMN client_upgrade.create_time IS '创建时间';
+
+COMMENT ON COLUMN client_upgrade.update_time IS '更新时间';
+
+COMMENT ON COLUMN client_upgrade.md5_key IS '文件MD5';
+
+COMMENT ON COLUMN client_upgrade.stop_status IS '是否停止更新,0:否,1:是';
+
+COMMENT ON COLUMN client_upgrade.stop_reason IS '停止更新原因';
+
+COMMENT ON COLUMN client_upgrade.updated_count IS '已更新量';
+
+
+
+
+-- 原始日志数据表
+create table if not exists t_client_log
+(
+   id bigserial primary key,
+   u_id varchar(20),
+   u_domain varchar(20),
+   d_os varchar(10),
+   d_brand varchar(100),
+   d_model varchar(30),
+   d_plat varchar(10),
+   d_ip varchar(15),
+   d_lat varchar(30),
+   d_lgt varchar(40),
+   l_type varchar(10),
+   l_sub_type varchar(10),
+   l_report_time varchar(50),
+   l_data text,
+   l_device_data jsonb,
+   l_user_data jsonb,
+   l_version_code varchar(50),
+   l_version_name varchar(50),
+   create_time timestamp default now(),
+   l_client_event varchar(50),
+   d_platform varchar(50),
+   l_event_id varchar(500),
+   l_current_page varchar(50)
+);
+
+comment on column t_client_log.id is '主键id';
+comment on column t_client_log.u_id is '用户id';
+comment on column t_client_log.u_domain is '域名 eg:ejabhost1';
+-- 该字段从l_device_data中的os获取
+comment on column t_client_log.d_os is '操作系统 LINUX、Android、Mac、iOS、PC64、android';
+-- 该字段从l_device_data中的osBrand获取
+comment on column t_client_log.d_brand is '客户端手机品牌';
+-- 该字段从l_device_data中的osModel获取
+comment on column t_client_log.d_model is '客户端机型';
+-- 该字段从l_device_data中的plat字段获取
+comment on column t_client_log.d_plat is '客户端平台 startalk';
+comment on column t_client_log.d_ip is '客户端ip地址';
+comment on column t_client_log.d_lat is '经纬度';
+comment on column t_client_log.d_lgt is '经纬度';
+comment on column t_client_log.l_type is '日志类型，CAT、COD、ACT、CRA、FIL';
+comment on column t_client_log.l_sub_type is '日志子类型';
+comment on column t_client_log.l_report_time is '上报时间';
+comment on column t_client_log.l_data is '原始日志';
+comment on column t_client_log.l_device_data is '设备日志';
+comment on column t_client_log.l_user_data is '用户日志';
+-- 该字段从l_device_data中的versionCode字段获取
+comment on column t_client_log.l_version_code is '版本编号 221';
+comment on column t_client_log.l_version_name is '版本名称 3.1.5';
+comment on column t_client_log.create_time is '创建时间';
+comment on column t_client_log.l_client_event is '事件名称 eg：搜索、拉取历史耗时';
+comment on column t_client_log.d_platform is '所属平台，与d_os类型，只是经过了转小写处理, ios/linux/mac/pc32/pc64/android ';
+comment on column t_client_log.l_event_id is '事件id';
+comment on column t_client_log.l_current_page is '当前页';
+
+
+-- 客户端品牌字典表
+create table if not exists t_dict_client_brand
+(
+ id bigserial not null
+  constraint t_dict_client_brand_pkey
+   primary key,
+ brand varchar(100)
+  constraint uk_tbcb_unique_index_brand
+   unique,
+ platform varchar(100),
+ del_flag integer default 0 not null,
+ create_time timestamp with time zone default now() not null
+);
+
+create unique index if not exists t_dict_client_brand_brand_platform_idx on t_dict_client_brand (brand, platform);
+comment on table t_dict_client_brand is '品牌渠道字典表';
+comment on column t_dict_client_brand.id is '主键';
+comment on column t_dict_client_brand.brand is '客户端手机品牌';
+comment on column t_dict_client_brand.platform is '品牌所属平台';
+comment on column t_dict_client_brand.del_flag is '删除标识 0 - 未删除 1 - 删除';
+comment on column t_dict_client_brand.create_time is '创建时间';
+
+
+-- 客户端机型字典表
+create table if not exists t_dict_client_model
+(
+ id bigserial not null
+  constraint t_dict_client_model_pkey
+   primary key,
+ client_model varchar(100),
+ client_brand varchar(100),
+ platform varchar(100),
+ del_flag integer default 0 not null,
+ create_time timestamp with time zone default now() not null
+);
+
+create unique index if not exists t_dict_client_model_client_model_client_brand_platform_idx on t_dict_client_model (client_model, client_brand, platform);
+comment on table t_dict_client_model is '机型字典表';
+comment on column t_dict_client_model.id is '主键';
+comment on column t_dict_client_model.client_model is '机型';
+comment on column t_dict_client_model.client_brand is '品牌';
+comment on column t_dict_client_model.platform is '所属平台';
+comment on column t_dict_client_model.del_flag is '删除标识 0 - 未删除 1 - 删除';
+comment on column t_dict_client_model.create_time is '创建时间';
+
+
+-- 客户端版本字典表
+create table if not exists t_dict_client_version
+(
+ id bigserial not null
+  constraint t_dict_client_version_pkey
+   primary key,
+ client_version varchar(100)
+  constraint uk_tbcv_unique_index_version
+   unique,
+ platform varchar(100),
+ del_flag integer default 0 not null,
+ create_time timestamp with time zone default now() not null
+)
+;
+
+create unique index if not exists t_dict_client_version_client_version_platform_idx on t_dict_client_version (client_version, platform);
+comment on table t_dict_client_version is '客户端版本字典表';
+comment on column t_dict_client_version.id is '主键';
+comment on column t_dict_client_version.client_version is 'qtalk客户端版本';
+comment on column t_dict_client_version.platform is '所属平台';
+comment on column t_dict_client_version.del_flag is '删除标识 0 - 未删除 1 - 删除';
+comment on column t_dict_client_version.create_time is '创建时间';
+
+-- 点击事件字典表
+create table if not exists t_dict_client_event
+(
+ id bigserial not null
+  constraint t_dict_client_event_pkey
+   primary key,
+ event varchar(100),
+ del_flag integer default 0 not null,
+ create_time timestamp with time zone default now() not null,
+ platform varchar(100)
+);
+
+create unique index if not exists event_platform_unique_idx on t_dict_client_event (event, platform);
+comment on table t_dict_client_event is '点击事件字典表';
+comment on column t_dict_client_event.id is '主键';
+comment on column t_dict_client_event.event is '事件';
+comment on column t_dict_client_event.del_flag is '删除标识 0 - 未删除 1 - 删除';
+comment on column t_dict_client_event.create_time is '创建时间';
+
+
+-- 点击数据统计表
+create table if not exists statistic_qtalk_click_event
+(
+ id bigserial not null
+  constraint statistic_qtalk_click_event_pkey
+   primary key,
+ client_platform varchar(100),
+ client_version varchar(100),
+ client_brand varchar(100),
+ client_model varchar(100),
+ click_event varchar(100),
+ click_day date,
+ click_cnt bigint,
+ del_flag integer default 0 not null,
+ create_time timestamp with time zone default now() not null
+);
+
+comment on table statistic_qtalk_click_event is '点击统计数据表';
+comment on column statistic_qtalk_click_event.id is '主键';
+comment on column statistic_qtalk_click_event.client_platform is '所属平台';
+comment on column statistic_qtalk_click_event.client_version is '客户端版本号';
+comment on column statistic_qtalk_click_event.client_brand is '客户端品牌';
+comment on column statistic_qtalk_click_event.client_model is '客户端型号';
+comment on column statistic_qtalk_click_event.click_event is '点击事件';
+comment on column statistic_qtalk_click_event.click_day is '日期(天)';
+comment on column statistic_qtalk_click_event.del_flag is '删除标识 0 - 未删除 1 - 删除';
+comment on column statistic_qtalk_click_event.create_time is '创建时间';
+-- ldap 配置表
+create table qtalk_config
+(
+    id  serial   primary key  not null,
+    config_key   varchar(30)  not null,
+    config_value varchar(500) not null,
+    create_time  timestamp default now()
+);
+comment on column qtalk_config.config_key is '配置key';
+comment on column qtalk_config.config_value is '配置值';
+comment on column qtalk_config.create_time is '创建时间';
+create unique index qtalk_config_id_uindex
+    on qtalk_config (id);
+create unique index qtalk_config_config_key_uindex
+    on qtalk_config (config_key);
+
+
+
