@@ -88,29 +88,50 @@ make_muc_user_attrs(User,Host,UL) ->
     end.
 
 get_muc_room_users(Server,From,Room, Host) ->
-    case ets:lookup(muc_users,{Room,Host}) of
-        [] ->
-            qtalk_muc:init_ets_muc_users(Server,Room, Host),
-            case ets:lookup(muc_users,{Room,Host}) of
-                [] -> [];
-                [{_,UL}] when is_list(UL) -> handle_muc_room_users_attrs(Room,From,UL);
-                _ -> []
-            end;
-        [{_,U}] when is_list(U) -> handle_muc_room_users_attrs(Room,From,U);
+    case catch qtalk_sql:get_muc_users(Server,Room, Host) of
+        {selected, _, Res} ->
+            UL = lists:foldl(fun([U, H], Acc) ->
+                case str:str(H,<<"conference">>) of
+                    0 -> [{U, H}|Acc];
+                    _ -> Acc
+                end
+            end, [], Res),
+            handle_muc_room_users_attrs(Server, Room,From,UL);
         _ -> []
     end.
 
-handle_muc_room_users_attrs(Room,From,UL) ->
-    UserL = case catch ets:lookup(muc_affiliation,Room) of
-        [{_,L}] when is_list(L) -> L;
-        _ -> []
-    end,
-
+handle_muc_room_users_attrs(Server, Room,From,UL) ->
+    UserL = get_room_affiliation(Server, Room),
     case lists:member({From#jid.luser,From#jid.lserver},UL) of
-        true ->
-            lists:map(fun ({User,Host}) ->
-                Attrs = make_muc_user_attrs(User,Host,UserL),
-                #xmlel{name = <<"m_user">>, attrs = Attrs, children = []}
-            end, UL);
+    true ->
+        lists:map(fun ({User,Host}) ->
+            Attrs = make_muc_user_attrs(User,Host,UserL),
+                #xmlel{name = <<"m_user">>,
+                    attrs =     Attrs,
+                     children = []} end,UL);
+    _ ->
+        catch monitor_util:monitor_count(<<"muc_users_empty">>, 1),
+        ?ERROR_MSG("the muc_users is [] for ~p~n", [{Room,From,UL, UserL}]),
+        []
+    end.
+
+get_room_affiliation(Server, Room) ->
+    case catch ejabberd_sql:sql_query(Server, [<<"select opts from muc_room ">>,<<"where name='">>, Room, <<"';">>]) of
+        {selected, [<<"opts">>], [[Opts]]} ->
+            get_affction_opts(ejabberd_sql:decode_term(Opts));
         _ -> []
     end.
+
+get_affction_opts(Opts) ->
+    lists:flatmap(
+      fun({affiliations, Affs}) ->
+             lists:flatmap(
+                 fun({{U, S, _R}, {NewAff,<<"">>}}) ->
+                     [{jlib:jid_to_string({iolist_to_binary(U), iolist_to_binary(S),<<"">>}),
+                           NewAff}];
+                    (_) ->
+                        []
+                    end, Affs);
+         (_) ->
+              []
+      end, Opts).

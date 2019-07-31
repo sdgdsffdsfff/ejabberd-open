@@ -25,8 +25,8 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 start_link(Option) ->
-    Topic = proplists:get_value(topic, Option),
-    Server = get_server_name(Topic),
+    Name = proplists:get_value(name, Option),
+    Server = get_server_name(Name),
     gen_server:start_link({local, Server}, ?MODULE, [Option], []).
 
 send_message(Topic, Key, Value) ->

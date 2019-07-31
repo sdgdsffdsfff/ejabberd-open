@@ -13,7 +13,7 @@
 -include("jlib.hrl").
 
 -export([get_muc_users/3,get_user_muc_subscribe/3,get_user_register_muc/2]).
--export([insert_muc_users_sub_push/5,del_muc_user/4,del_user_muc_subscribe/4,add_user_muc_subscribe/6]).
+-export([insert_muc_users_sub_push/5,del_muc_user/5,del_user_muc_subscribe/4,add_user_muc_subscribe/6]).
 -export([get_muc_opts/3,get_muc_vcard_info/3,insert_muc_users/5]).
 -export([get_user_register_mucs/3,insert_muc_msg/8]).
 -export([insert_warn_msg/8,insert_msg_v1/8,insert_msg_v2/8]).
@@ -70,10 +70,10 @@ insert_muc_users_sub_push(LServer,Muc_name, Domain, User,Host) ->
          Num, <<"', '">>,
          Time, <<"');">>]).
 
-del_muc_user(LServer,Muc, Domain, User) ->
+del_muc_user(LServer,Muc, Domain, User, Host) ->
     ejabberd_sql:sql_query(LServer,
         %%?SQL("delete from muc_room_users where username = %(User)s and muc_name = %(Muc)s")).
-        [<<"delete from muc_room_users where username = '">>,User,<<"' and muc_name = '">>,Muc, <<"' and domain = '">>, Domain, <<"';">>]).
+        [<<"delete from muc_room_users where username = '">>,User, <<"' and host = '">>, Host, <<"' and muc_name = '">>,Muc, <<"' and domain = '">>, Domain, <<"';">>]).
 
 del_user_muc_subscribe(LServer,Muc, Domain, User) ->
     ejabberd_sql:sql_query(LServer,
