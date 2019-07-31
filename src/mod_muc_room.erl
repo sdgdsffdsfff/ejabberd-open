@@ -3921,16 +3921,6 @@ get_config(Lang, StateData, From) ->
 				   <<"muc#roomconfig_captcha_whitelist">>,
 				   ((?SETS):to_list(Config#config.captcha_whitelist)))]
 		    ++ [],
-%		    case
-%		      mod_muc_log:check_access_log(StateData#state.server_host,
-%						   From)
-%			of
-%		      allow ->
-%			  [?BOOLXFIELD(<<"Enable logging">>,
-%				       <<"muc#roomconfig_enablelogging">>,
-%				       (Config#config.logging))];
-%		      _ -> []
-%		    end,
     X = ejabberd_hooks:run_fold(get_room_config,
 				StateData#state.server_host,
 				Res,
