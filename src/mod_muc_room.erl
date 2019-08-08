@@ -117,7 +117,6 @@ init([Host, ServerHost, Access, Room, HistorySize,
     State1 = set_opts(DefRoomOpts, State),
     store_room(State1),
 
-    qtalk_muc:init_ets_muc_users(ServerHost,Room,Host),
     NewState = invite_all_register_user(State1), 
     
     ?INFO_MSG("Created MUC room ~s@~s by ~s",
@@ -136,7 +135,6 @@ init([Host, ServerHost, Access, Room, HistorySize, RoomShaper, Opts]) ->
 				  jid = jid:make(Room, Host, <<"">>),
 				  room_shaper = Shaper}),
     
-    qtalk_muc:init_ets_muc_users(ServerHost,Room,Host),
     NewState = invite_all_register_user(State),    
 
     TRef = start_timer(),
@@ -1058,7 +1056,6 @@ terminate(Reason, _StateName, StateData) ->
 			 tab_remove_online_user(LJID, StateData)
 		 end,
 		 [], get_users_and_subscribers(StateData)),
-    catch ets:delete(muc_users,{StateData#state.room,StateData#state.host}),
     mod_muc:room_destroyed(StateData#state.host, StateData#state.room, self(),
 			   StateData#state.server_host),
     ok.
@@ -3364,7 +3361,6 @@ send_kickban_presence(UJID, JID, Reason, Code, NewAffiliation,
 		    _ -> []
 		  end
 	    end,
-    catch qtalk_muc:del_muc_room_users(StateData#state.server_host,StateData#state.room,StateData#state.host,JID#jid.user,JID#jid.lserver),
     catch send_muc_del_registed_presence(JID,StateData),
     lists:foreach(fun (J) ->
 			  tab_remove_online_user(J, StateData),
@@ -3488,9 +3484,6 @@ process_iq_owner(From, set, Lang, SubEl, StateData) ->
         catch qtalk_sql:restore_muc_user_mark(StateData#state.server_host,StateData#state.room,StateData#state.host),
         catch qtalk_sql:del_user_register_mucs(StateData#state.server_host,StateData#state.room,StateData#state.host),
         catch qtalk_sql:del_muc_vcard_info(StateData#state.server_host,StateData#state.room,<<"Owner Destroy">>),
-
-        catch qtalk_muc:del_ets_muc_room_users(StateData#state.server_host,StateData#state.room),
-        catch qtalk_muc:del_ets_subscribe_users(StateData#state.server_host,StateData#state.room),
 
 		destroy_room(SubEl1, StateData);
 	    Items ->
@@ -3928,16 +3921,6 @@ get_config(Lang, StateData, From) ->
 				   <<"muc#roomconfig_captcha_whitelist">>,
 				   ((?SETS):to_list(Config#config.captcha_whitelist)))]
 		    ++ [],
-%		    case
-%		      mod_muc_log:check_access_log(StateData#state.server_host,
-%						   From)
-%			of
-%		      allow ->
-%			  [?BOOLXFIELD(<<"Enable logging">>,
-%				       <<"muc#roomconfig_enablelogging">>,
-%				       (Config#config.logging))];
-%		      _ -> []
-%		    end,
     X = ejabberd_hooks:run_fold(get_room_config,
 				StateData#state.server_host,
 				Res,
@@ -5224,26 +5207,9 @@ invite_all_register_user(State)->
                                        attrs =[{<<"xmlns">>, ?NS_MUC}],
                                        children = []}]},
 
-    case catch ets:lookup(muc_room_users,State#state.room) of
-        [{_,UL}] when is_list(UL) -> do_invite_all_register_user(UL,Packet,State);
-        _ ->
-            case catch qtalk_sql:get_muc_users(State#state.server_host,State#state.room,State#state.host) of
-            {selected,_,Res} when is_list(Res) ->
-                UL = lists:flatmap(fun([U,H]) ->
-                    case str:str(H,<<"conference">>) of
-                        0 -> [{U,H}];
-                        _ -> []
-                    end
-                end, Res),
-
-                case UL of
-                [] -> State;
-                _ ->
-                    ets:insert(muc_users,{{State#state.room,State#state.host},UL}),
-                    do_invite_all_register_user(UL,Packet,State)
-                end;
-            _ -> State
-            end
+    case catch qtalk_muc:get_muc_users(State#state.room,State#state.host) of
+       [] -> State;
+       UL -> do_invite_all_register_user(UL,Packet,State)
     end.
 
 do_invite_all_register_user(UL,Packet,StateData) ->
@@ -5273,10 +5239,9 @@ is_user_online_with_no_resource(JID, StateData) ->
 %%%%%%%% check_jid_is_register,use in is_user_allowed_message_nonparticipant 
 %%%%%%%%--------------------------------------------------------------------
 check_jid_is_register(JID,Room,Host) ->
-    case catch ets:lookup(muc_users,{Room,Host}) of
-        [] -> false;
-        [{_,UL}] when is_list(UL) -> lists:member({JID#jid.luser,JID#jid.lserver},UL);
-        _ -> false
+    case catch ejabberd_sql:sql_query([<<"select username from muc_room_users where muc_name='">>, Room, <<"' and domain ='">>, Host, <<"' and username = '">>, JID#jid.luser, <<"' and host = '">>, JID#jid.lserver, <<"';">>]) of
+       {selected, _, [_]} -> true;
+       _ -> false
     end.
 
 %%%%%%%%--------------------------------------------------------------------
@@ -5560,39 +5525,10 @@ send_user_join_muc_presence_v2(NJID, Reason, StateData) ->
 %%%%%%%% 获取用户注册列表
 %%%%%%%%--------------------------------------------------------------------
 get_muc_room_users(StateData) ->
-    case ets:lookup(muc_users,{StateData#state.room,StateData#state.host}) of
-        [] ->
-            UL = case catch qtalk_sql:get_muc_users(StateData#state.server_host,StateData#state.room,StateData#state.host) of
-                {selected,_,Res} when is_list(Res) ->
-                    lists:flatmap(fun([U,H]) ->
-                        case str:str(H,<<"conference">>) of
-                            0 -> [{U,H}];
-                            _ -> []
-                        end
-                    end,Res);
-                _ -> []
-            end,
-
-            case UL of
-                [] -> ok;
-                _ -> ets:insert(muc_users,{{StateData#state.room,StateData#state.host},UL})
-            end,
-
-            lists:map(fun ({U,H}) ->
-                Attrs = make_muc_user_attrs(U,H,StateData),
-                #xmlel{name = <<"m_user">>,
-                       attrs = Attrs,
-                       children = []}
-            end, UL);
-        [{_,UL}] when is_list(UL) ->
-            lists:map(fun ({U,H}) ->
-                Attrs = make_muc_user_attrs(U,H,StateData),
-                #xmlel{name = <<"m_user">>,
-                       attrs = Attrs,
-                       children = []}
-            end, UL);
-        _ -> []
-    end.
+    lists:map(fun({{U, H, _}, _Info}) ->
+        Attrs = make_muc_user_attrs(U,H,StateData),
+        #xmlel{name = <<"m_user">>, attrs = Attrs, children = []}
+    end, (?DICT):to_list(StateData#state.users)).
 
 %%%%%%%%--------------------------------------------------------------------
 %%%%%%%% @date 2017-03-01
@@ -5739,28 +5675,9 @@ send_muc_message(StateData,From,FromNick,Packet) ->
     end, ?DICT:to_list(StateData#state.users)).
 
 do_get_muc_room_users(StateData) ->
-    case ets:lookup(muc_users,{StateData#state.room,StateData#state.host}) of
-        [] ->
-            UL = case catch qtalk_sql:get_muc_users(StateData#state.server_host,StateData#state.room,StateData#state.host) of
-                {selected,_,Res} when is_list(Res) ->
-                    lists:flatmap(fun([U,H]) ->
-                        case str:str(H,<<"conference">>) of
-                            0 -> [{U,H}];
-                            _ -> []
-                        end
-                    end, Res);
-                _ -> []
-            end,
-    
-            case UL of
-                [] -> ok;
-                _ -> ets:insert(muc_users,{{StateData#state.room,StateData#state.host},UL})
-            end,
-    
-            lists:map(fun ({U,H}) -> <<U/binary, "@", H/binary>> end, UL);
-        [{_,UL}] when is_list(UL) -> lists:map(fun ({U,H}) -> <<U/binary, "@", H/binary>> end, UL);
-        _ -> []
-    end.
+    lists:map(fun({{U, H, _}, _Info}) ->
+        <<U/binary, "@", H/binary>>
+    end, (?DICT):to_list(StateData#state.users)).
 
 %% 将所有消息通过接口发送个第三方服务
 send_push_message(Time,Nick, FromJID, Packet, StateData) ->
@@ -5819,7 +5736,6 @@ start_timer() ->
 restart_timer(TRef) ->
     cancel_timer(TRef),
     start_timer().
-
 
 handle_new_service_message(Jid,Invites,StateData) ->
     Nick = qtalk_public:get_nick(Jid#jid.luser, Jid#jid.lserver),
