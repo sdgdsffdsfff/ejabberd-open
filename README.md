@@ -395,13 +395,15 @@ $ supervisorctl -c conf/supervisor.conf reload
 确保服务启动（观察日志,确保无报错）
 $ tail -100f log/access.log 
 ```
-可以执行以下脚本来检查一些常见的错误
-[check.sh](https://github.com/qunarcorp/or_open/blob/master/tools/check.sh)
+可以执行以下脚本来检查一些常见的错误: 下载该文件[check.sh](https://github.com/qunarcorp/or_open/blob/master/tools/check.sh)
+
 ```
 # sed -i 's/ip/自己的ip/g' ./check.sh
 # chmod +x check.sh
 # ./check.sh
 ```
+
+如果发现有提示："ip的5202端口未开启外网访问，请开启该端口访问或者关掉防火墙"，请在服务器上使用telnet ip 5202检查是否可以连上，一般是因为防火墙限制了或者端口就没监听。
 
 到此，服务端已经安装完成。
 请下载[startalk客户端](https://im.qunar.com/new/#/download)
