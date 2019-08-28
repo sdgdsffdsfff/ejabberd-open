@@ -5347,8 +5347,8 @@ process_iq_invtie_v2(From,set,_Lang,SubEl,StateData) ->
                                 end
                             end
                         end end ,{[], {result, [],StateData,RUsers}},Els),
-                R = handle_iq_invite_res(Res,RUsers,StateData),
-                handle_new_service_message(From, Users, StateData),
+                R = {result, _, State1} = handle_iq_invite_res(Res,RUsers,StateData),
+                handle_new_service_message(From, Users, State1),
                 R
         end;
     true -> {error,?ERR_FORBIDDEN}
