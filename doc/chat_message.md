@@ -8,12 +8,12 @@
 <message from='test1@qtalk'        //发消息的人@xxxx
           to='test2@qtalk'               //收消息的人@xxxx
           realfrom='test1@qtalk'        // 真正的from，type=consult才会有
-		  realto='test2@qtalk'         // 真正的to,type=consult才会有
-		  msec_times='1530785714622'    // 消息的时间
+          realto='test2@qtalk'         // 真正的to,type=consult才会有
+          msec_times='1530785714622'    // 消息的时间
           type='chat'>                            // chat或者consult
               <body id='watcher-18DE3DBE1AF941B3B786C31AA894617F'     //消息id，生成方式是uuid，加上自己系统的唯一标示前缀
-					extendInfo=''                              //扩展信息
-					backupinfo=''                             //扩展信息
+                    extendInfo=''                              //扩展信息
+                    backupinfo=''                             //扩展信息
                     msgType='1'>                               //消息类型
                   恩                                           //发送内容
               </body>
