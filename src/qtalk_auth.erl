@@ -41,7 +41,7 @@ do_check_host_user_auth(Host, User, Password) ->
     Pass = proplists:get_value("p",L),
     Key = proplists:get_value("mk",L),
 
-    Url = ejabberd_config:get_option(auth_url,fun(Url)-> binary_to_list(Url) end,"http://127.0.0.1:8081/corp/newapi/auth_token.qunar"),
+    Url = ejabberd_config:get_option(auth_url,fun(Url)-> binary_to_list(Url) end,"http://127.0.0.1:8081/corp/auth/checktoken.qunar"),
     Header = [],
     Type = "application/json",
     HTTPOptions = [],
