@@ -7,7 +7,7 @@
 ```
 <message from='test1@qtalk'        //发消息的人@xxxx
           to='test2@qtalk'               //收消息的人@xxxx
-		  realfrom='test1@qtalk'        // 真正的from，type=consult才会有
+          realfrom='test1@qtalk'        // 真正的from，type=consult才会有
 		  realto='test2@qtalk'         // 真正的to,type=consult才会有
 		  msec_times='1530785714622'    // 消息的时间
           type='chat'>                            // chat或者consult
@@ -24,7 +24,7 @@
 |:--|:--|:--|
 | from  | 消息的发送者  |   |
 | to  | 消息接受者  |   |
-| type    | chat       |   |
+| type    | chat或者consult       |   |
 | msec_times        | 毫秒时间戳           |   |
 
 | body属性  | 含义  | 备注  |
