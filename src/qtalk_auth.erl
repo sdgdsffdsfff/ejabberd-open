@@ -12,10 +12,10 @@
 -include("logger.hrl").
 
 check_user_password(Host, User, Password) ->
-    R = case qtalk_sql:get_password_salt_by_host(Host, User) of
-        {selected,_, [[Password1, Salt]]} -> 
-            case catch rsa:dec(base64:decode(Password)) of
-                Json when is_binary(Json) ->
+    case catch rsa:dec(base64:decode(Password)) of
+        Json when is_binary(Json) ->
+            R = case qtalk_sql:get_password_salt_by_host(Host, User) of
+                {selected,_, [[Password1, Salt]]} ->
                     {ok,{obj,L},[]} = rfc4627:decode( Json),
                     Pass = proplists:get_value("p",L),
                     Key = proplists:get_value("mk",L),
@@ -26,12 +26,46 @@ check_user_password(Host, User, Password) ->
                         catch set_user_mac_key(Host,NewKey,Key)
                     end,
                     do_check_host_user(Password1,Pass, Salt);
-               _ -> false
+                _ -> false
+           end,
+           case R of
+               false -> ?ERROR_MSG("auth fail for ~p~n", [Json]), false;
+               true -> true
            end;
-        _ -> false
-    end,
+        _ -> do_check_host_user_auth(Host, User, Password)
+    end.
 
-    R.
+do_check_host_user_auth(Host, User, Password) ->
+    Json = base64:decode(Password),
+    {ok,{obj,L},[]} = rfc4627:decode(Json),
+    Pass = proplists:get_value("p",L),
+    Key = proplists:get_value("mk",L),
+
+    Url = ejabberd_config:get_option(auth_url,fun(Url)-> binary_to_list(Url) end,"http://127.0.0.1:8081/corp/newapi/auth_token.qunar"),
+    Header = [],
+    Type = "application/json",
+    HTTPOptions = [],
+    Options = [],
+    Body = rfc4627:encode({obj, [{"user", User}, {"host", Host}, {"token", Pass}]}),
+    case catch http_client:http_post(Url,Header,Type,Body,HTTPOptions,Options) of
+    {ok, {_Status,_Headers, Res}} ->
+        case rfc4627:decode(Res) of
+            {ok,{obj,Args},_} ->
+                case proplists:get_value("ret", Args) of
+                    R when R =:= true; R =:= "true" ->
+                        case Key of
+                            undefined -> ok;
+                            _ ->
+                                NewKey = qtalk_public:concat(User,<<"@">>,Host),
+                                catch set_user_mac_key(Host,NewKey,Key)
+                        end,
+                        true;
+                    _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), false
+                end;
+             _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), false
+        end;
+      R -> ?ERROR_MSG("auth password fail for ~p~n", [R]), false
+    end.
 
 do_check_host_user(<<"CRY:", _>>, _, null) -> false;
 do_check_host_user(<<"CRY:", Password/binary>>,Pass, Salt) ->
