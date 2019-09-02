@@ -46,7 +46,7 @@ do_check_host_user_auth(Host, User, Password) ->
     Type = "application/json",
     HTTPOptions = [],
     Options = [],
-    Body = rfc4627:encode({obj, [{"user", User}, {"host", Host}, {"token", Pass}]}),
+    Body = rfc4627:encode({obj, [{"u", User}, {"h", Host}, {"t", Pass}]}),
     case catch http_client:http_post(Url,Header,Type,Body,HTTPOptions,Options) of
     {ok, {_Status,_Headers, Res}} ->
         case rfc4627:decode(Res) of
