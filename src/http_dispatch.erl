@@ -41,6 +41,8 @@ handle_process([<<"management">>, <<"get_muc_opts">>], Req) ->
     http_management_get_muc_opts:handle(Req);
 handle_process([<<"management">>, <<"del_muc_user">>], Req) ->
     http_management_del_muc_user:handle(Req);
+handle_process([<<"add_host">>], Req) ->
+    http_host_add:handle(Req);
 handle_process([<<"auth_uk">>], Req) ->
     http_auth_uk:handle(Req);
 handle_process([<<"get_user_nick">>], Req) ->

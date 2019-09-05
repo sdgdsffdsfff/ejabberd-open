@@ -36,8 +36,7 @@ check_user_password(Host, User, Password) ->
     end.
 
 do_check_host_user_auth(Host, User, Password) ->
-    Json = base64:decode(Password),
-    {ok,{obj,L},[]} = rfc4627:decode(Json),
+    {ok,{obj,L},[]} = rfc4627:decode(Password),
     Pass = proplists:get_value("p",L),
     Key = proplists:get_value("mk",L),
 

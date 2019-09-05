@@ -3679,6 +3679,9 @@ CREATE INDEX host_users_user_id_user_name_pinyin_idx ON public.host_users USING 
 --
 
 CREATE INDEX host_users_user_name_idx ON public.host_users USING btree (user_name);
+CREATE UNIQUE INDEX host_users_user_id_host_id_unique_index ON public.host_users USING btree (user_id, host_id);
+CREATE UNIQUE INDEX host_users_tel_host_id_unique_index ON public.host_users USING btree (tel, host_id);
+CREATE UNIQUE INDEX host_users_email_host_id__unique_index ON public.host_users USING btree (email, host_id);
 
 
 --
