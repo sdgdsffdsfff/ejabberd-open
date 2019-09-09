@@ -5687,7 +5687,7 @@ send_push_message(Time,Nick, FromJID, Packet, StateData) ->
         _ -> do_send_push_message(Time,Nick, FromJID, Packet, StateData, PushUrls)
     end.
 
-do_send_push_message(Time,Nick, FromJID, Packet, StateData, []) ->
+do_send_push_message(Time,Nick, FromJID, Packet, StateData, []) -> ok;
 do_send_push_message(Time,Nick, FromJID, Packet, StateData, [PushUrl|Rest]) ->
     #xmlel{attrs = Attrs} = Packet,
 
