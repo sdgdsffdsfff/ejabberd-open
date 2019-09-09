@@ -1176,13 +1176,15 @@ get_server(From_host,To_host) ->
 
 %% 将所有消息通过接口发送个第三方服务
 send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime) ->
-    PushUrl = ejabberd_config:get_option(push_url, fun(Url)-> Url end, undefined),
+    PushUrls = ejabberd_config:get_option(push_url, fun(Url)-> Url end, undefined),
     case PushUrl of
         undefined -> ok;
-        _ -> do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrl)
+        _ -> do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrls)
     end.
 
-do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrl) ->
+do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, []) ->
+    ok;
+do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, [PushUrl|Rest]) ->
     case jlib:nodeprep(From) of
     error -> {error, invalid_jid};
     LUser ->
@@ -1217,4 +1219,5 @@ do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrl) -
         case catch http_client:http_post(binary_to_list(PushUrl), [{"connection", "close"}], "application/json", MsgContent, [], []) of
             Res -> ?DEBUG("the res is ~p~n", [Res])
         end
-    end.
+    end,
+    do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, Rest).

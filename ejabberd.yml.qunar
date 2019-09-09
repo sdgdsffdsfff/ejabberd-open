@@ -651,7 +651,9 @@ allow_contrib_modules: true
 default_host: "qtalk"
 default_domain: "conference.qtalk"
 
-push_url: "http://127.0.0.1:8083/push_service/qtapi/token/sendMessageToPush.qunar"
+push_url:
+  - "http://127.0.0.1:8083/push_service/qtapi/token/sendMessageToPush.qunar"
+
 auth_url: "http://127.0.0.1:8081/corp/auth/checktoken.qunar"
 
 rsa_public_key: "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCy2VXDAlCZlj7gPHvC/vwvbpTN\n/GyW0tmNCqh0UPitdTTGZk3UcLqu9lWMGPViL/5lhboiSogsDxJLHdwo91DDBjTX\n1HbuyuOhvsvayV7Yc8t+ajFW/8RwlvhGSzVplthoU+md9kGeZ8t73VWWZUEB0iyW\nx7Y/RjUwTdnOlNXDzQIDAQAB\n-----END PUBLIC KEY-----"
