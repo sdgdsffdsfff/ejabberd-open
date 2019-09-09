@@ -59,11 +59,11 @@ do_check_host_user_auth(Host, User, {nauth, Password}) ->
                                 catch set_user_mac_key(Host,NewKey,Key)
                         end,
                         true;
-                    _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), {false, <<"expired">>}
+                    _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), {false, <<"nauth-expired">>}
                 end;
-             _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), {false, <<"http-response-error">>}
+             _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), {false, <<"nauth-http-response-error">>}
         end;
-      R -> ?ERROR_MSG("auth password fail for ~p~n", [R]), {false, <<"http-fail">>}
+      R -> ?ERROR_MSG("auth password fail for ~p~n", [R]), {false, <<"nauth-http-fail">>}
     end;
 do_check_host_user_auth(_Host, User, {anony, [Plat, UUID, Token, Password]}) ->
     ?DEBUG("check_password the user type is client and anonymous auth, the user is ~p, token is ~p~n", [User, [Plat, UUID, Token]]),
