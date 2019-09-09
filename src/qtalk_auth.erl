@@ -32,10 +32,10 @@ check_user_password(Host, User, Password) ->
                false -> ?ERROR_MSG("auth fail for ~p~n", [Json]), false;
                true -> true
            end;
-        _ -> do_check_host_user_auth(Host, User, Password)
+        _ -> do_check_host_user_auth(Host, User, user_type(Password))
     end.
 
-do_check_host_user_auth(Host, User, Password) ->
+do_check_host_user_auth(Host, User, {nauth, Password}) ->
     {ok,{obj,L},[]} = rfc4627:decode(Password),
     Pass = proplists:get_value("p",L),
     Key = proplists:get_value("mk",L),
@@ -59,11 +59,31 @@ do_check_host_user_auth(Host, User, Password) ->
                                 catch set_user_mac_key(Host,NewKey,Key)
                         end,
                         true;
-                    _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), false
+                    _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), {false, <<"expired">>}
                 end;
-             _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), false
+             _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), {false, <<"http-response-error">>}
         end;
-      R -> ?ERROR_MSG("auth password fail for ~p~n", [R]), false
+      R -> ?ERROR_MSG("auth password fail for ~p~n", [R]), {false, <<"http-fail">>}
+    end;
+do_check_host_user_auth(Host, User, {anony, [Plat, UUID, Token, Password]}) ->
+    ?DEBUG("check_password the user type is client and anonymous auth, the user is ~p, token is ~p~n", [User, [Plat, UUID, Token]]),
+    case mod_redis:str_get(1, <<Plat/binary, User/binary>>) of
+        {ok, Password} -> mod_redis:expire_time(1, <<Plat/binary, User/binary>>, 86400*7), true;
+        _ ->
+            %%?ERROR_MSG("check anonymous unvalid fail for client ~p:~p~n", [User, {Plat, UUID, Token, Password}]),
+            catch monitor_util:monitor_count(<<"login_fail_client_anonymous_token_unvalid">>, 1),
+            {false, "out_of_date"}
+    end.
+
+user_type(Password) ->
+    case rfc4627:decode(Password) of
+        {ok, {obj, [{"anony", {obj, List}}]}, []} ->
+            Plat = proplists:get_value("plat", List),
+            Token = proplists:get_value("token", List),
+            UUID = proplists:get_value("uuid", List),
+            {anony, [Plat, UUID, Token, Password]};
+        _ ->
+            {nauth, Password}
     end.
 
 do_check_host_user(<<"CRY:", _>>, _, null) -> false;
