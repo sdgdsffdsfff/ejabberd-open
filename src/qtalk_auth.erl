@@ -65,7 +65,7 @@ do_check_host_user_auth(Host, User, {nauth, Password}) ->
         end;
       R -> ?ERROR_MSG("auth password fail for ~p~n", [R]), {false, <<"http-fail">>}
     end;
-do_check_host_user_auth(Host, User, {anony, [Plat, UUID, Token, Password]}) ->
+do_check_host_user_auth(_Host, User, {anony, [Plat, UUID, Token, Password]}) ->
     ?DEBUG("check_password the user type is client and anonymous auth, the user is ~p, token is ~p~n", [User, [Plat, UUID, Token]]),
     case mod_redis:str_get(1, <<Plat/binary, User/binary>>) of
         {ok, Password} -> mod_redis:expire_time(1, <<Plat/binary, User/binary>>, 86400*7), true;
@@ -98,7 +98,7 @@ do_check_host_user(_, _, _) -> false.
 do_md5(S) ->
      p1_sha:to_hexlist(erlang:md5(S)).
 
-set_user_mac_key(Server,User,Key) ->
+set_user_mac_key(_Server,User,Key) ->
     UTkey = str:concat(User,<<"_tkey">>),
     case mod_redis:redis_cmd(2,["HKEYS",UTkey]) of
     {ok,L} when is_list(L) ->
