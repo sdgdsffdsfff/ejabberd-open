@@ -5681,13 +5681,14 @@ do_get_muc_room_users(StateData) ->
 
 %% 将所有消息通过接口发送个第三方服务
 send_push_message(Time,Nick, FromJID, Packet, StateData) ->
-    PushUrl = ejabberd_config:get_option(push_url, fun(Url)-> Url end, undefined),
-    case PushUrl of
+    PushUrls = ejabberd_config:get_option(push_url, fun(Url)-> Url end, undefined),
+    case PushUrls of
         undefined -> ok;
-        _ -> do_send_push_message(Time,Nick, FromJID, Packet, StateData, PushUrl)
+        _ -> do_send_push_message(Time,Nick, FromJID, Packet, StateData, PushUrls)
     end.
 
-do_send_push_message(Time,Nick, FromJID, Packet, StateData, PushUrl) ->
+do_send_push_message(Time,Nick, FromJID, Packet, StateData, []) ->
+do_send_push_message(Time,Nick, FromJID, Packet, StateData, [PushUrl|Rest]) ->
     #xmlel{attrs = Attrs} = Packet,
 
     UL = do_get_muc_room_users(StateData),
@@ -5722,7 +5723,8 @@ do_send_push_message(Time,Nick, FromJID, Packet, StateData, PushUrl) ->
                                        {"msg_id", Msg_Id},
                                        {"realfrom", RealFrom},
                                        {"userlist", UL}]}),
-    http_client:http_post(binary_to_list(PushUrl), [{"connection", "close"}], "application/json", MsgContent, [], []).
+    http_client:http_post(binary_to_list(PushUrl), [{"connection", "close"}], "application/json", MsgContent, [], []),
+    do_send_push_message(Time,Nick, FromJID, Packet, StateData, Rest).
 
 
 cancel_timer(undefined) ->
