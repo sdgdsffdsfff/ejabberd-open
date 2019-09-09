@@ -1177,7 +1177,7 @@ get_server(From_host,To_host) ->
 %% 将所有消息通过接口发送个第三方服务
 send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime) ->
     PushUrls = ejabberd_config:get_option(push_url, fun(Url)-> Url end, undefined),
-    case PushUrl of
+    case PushUrls of
         undefined -> ok;
         _ -> do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrls)
     end.
