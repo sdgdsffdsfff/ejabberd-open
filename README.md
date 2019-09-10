@@ -2,6 +2,7 @@
 
 # Startalk EJABBERD
 
+[English Version](README.en.md)
 Startalk(前身叫Qtalk，目前主体app尚未全部改名完毕。)是基于ejabberd，根据业务需要改造而来。修改和扩展了很多
 ejaberd不支持的功能。
 
