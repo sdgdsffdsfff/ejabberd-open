@@ -413,7 +413,7 @@ Information about how to configure navigation: how to configure navigation on cl
 
 Please generate a QR Code at http://www.liantu.com/ for the navigation address at (or you can generate QR Code at other websites), then add the navigation on mobile app by scanning the QR Code.
 
-Branches and PR
+## Branches and PR
 Now, the branches of our projects are 
 * Master (the main branch)
 * Release (the release branch that used for combining to the master)
