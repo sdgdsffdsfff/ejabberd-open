@@ -872,6 +872,10 @@ insert_chat_msg(_Server,From, To,FromHost,ToHost, Msg,_Body,ID,InsertTime) ->
     case jlib:nodeprep(From) of
     error -> {error, invalid_jid};
     LUser ->
+        Packet = #xmlel{attrs = Attrs} = fxml_stream:parse_element(Msg),
+        Type = fxml:get_attr_s(<<"type">>, Attrs),
+        Realfrom = fxml:get_attr_s(<<"realfrom">>, Attrs),
+        Realto = fxml:get_attr_s(<<"realto">>, Attrs),
         LFrom = ejabberd_sql:escape(LUser),
         LTo = ejabberd_sql:escape(To),
         LBody = ejabberd_sql:escape(Msg),
@@ -880,11 +884,18 @@ insert_chat_msg(_Server,From, To,FromHost,ToHost, Msg,_Body,ID,InsertTime) ->
         Time = qtalk_public:pg2timestamp(InsertTime),
 
         send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime),
-        insert_msg2db(LServer, LFrom,LTo,FromHost,ToHost,LID,LBody,Time)
+        insert_msg2db(LServer, LFrom,LTo,FromHost,ToHost,LID,LBody,Time, Realfrom,Realto,Type)
     end.
 
 insert_msg2db(LServer, LFrom,LTo,From_host,To_host,LID,LBody,Time) ->
     case catch qtalk_sql:insert_msg_v2(LServer, LFrom,LTo,From_host,To_host,LBody,LID,Time) of
+        {updated, 1} -> {atomic, ok};
+        A -> ?INFO_MSG("Insert Msg error Body: ~p ,~p ~n",[A,LBody]), {atomic, exists}
+    end.
+
+
+insert_msg2db(LServer, LFrom,LTo,From_host,To_host,LID,LBody,Time, Realfrom, Realto, Type) ->
+    case catch qtalk_sql:insert_msg_v3(LServer, LFrom,LTo,From_host,To_host,LBody,LID,Time, Realfrom, Realto, Type) of
         {updated, 1} -> {atomic, ok};
         A -> ?INFO_MSG("Insert Msg error Body: ~p ,~p ~n",[A,LBody]), {atomic, exists}
     end.

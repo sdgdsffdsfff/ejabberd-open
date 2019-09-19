@@ -16,7 +16,7 @@
 -export([insert_muc_users_sub_push/5,del_muc_user/5,del_user_muc_subscribe/4,add_user_muc_subscribe/6]).
 -export([get_muc_opts/3,get_muc_vcard_info/3,insert_muc_users/5]).
 -export([get_user_register_mucs/3,insert_muc_msg/8]).
--export([insert_warn_msg/8,insert_msg_v1/8,insert_msg_v2/8]).
+-export([insert_warn_msg/8,insert_msg_v1/8,insert_msg_v2/8, insert_msg_v3/11]).
 -export([insert_user_register_mucs/5,update_register_mucs/6,del_muc_vcard_info/3,restore_muc_user_mark/3]).
 -export([del_user_register_mucs/3,get_concats/2,get_muc_concats/2,insert_user_block_list/3]).
 -export([del_muc_users/3,get_department_info/1,get_department_info1/1]).
@@ -124,6 +124,12 @@ insert_msg_v2(LServer,From,To,FHost,THost,Body,ID,Time) ->
     ejabberd_sql:sql_query(LServer,
         [<<"insert into msg_history(m_from,m_to,m_body,msg_id,from_host,to_host,create_time) values ('">>,
             From,<<"','">>,To,<<"','">>,Body,<<"','">>,ID,<<"','">>,FHost,<<"','">>,THost,<<"',">>,Time,<<");">>]).
+
+
+insert_msg_v3(LServer,From,To,FHost,THost,Body,ID,Time, Realfrom, Realto, Type) ->
+    ejabberd_sql:sql_query(LServer,
+        [<<"insert into msg_history(m_from,m_to,m_body,msg_id,from_host,to_host,create_time,realfrom, realto, msg_type) values ('">>,
+            From,<<"','">>,To,<<"','">>,Body,<<"','">>,ID,<<"','">>,FHost,<<"','">>,THost,<<"',">>,Time, <<",'">>, Realfrom, <<"','">>, Realto, <<"','">>, Type, <<"');">>]).
 
 
 del_user_register_mucs(LServer,Muc,Domain) ->
