@@ -275,9 +275,9 @@ tcp6       0      0 127.0.0.1:8006          :::*                    LISTEN      
 可以执行以下脚本来检查一些常见的错误: 下载该文件[check.sh](https://github.com/qunarcorp/or_open/blob/master/tools/check.sh)
 
 ```
-# sed -i 's/ip/自己的ip/g' ./check.sh
-# chmod +x check.sh
-# ./check.sh
+$ sed -i 's/ip/自己的ip/g' ./check.sh
+$ chmod +x check.sh
+$ ./check.sh
 ```
 
 如果发现有提示："ip的5202端口未开启外网访问，请开启该端口访问或者关掉防火墙"，请在服务器上使用telnet ip 5202检查是否可以连上，一般是因为防火墙限制了或者端口就没监听。
