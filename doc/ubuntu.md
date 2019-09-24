@@ -179,7 +179,7 @@ $ make
 $ make install
 
 添加PATH
-$ vim ~/.bash_profile
+$ vim ~/.bashrc
  
 ----------------------------------
 # User specific environment and startup programs
@@ -187,7 +187,7 @@ ERLANGPATH=/startalk/erlang1903
 PATH=$PATH:$HOME/bin:$ERLANGPATH/bin
 ----------------------------------
  
-$ . ~/.bash_profile
+$ . ~/.bashrc
 
 确认erlang安装成功
 $ erl
