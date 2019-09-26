@@ -75,7 +75,7 @@ carbon_message(From,To,Packet) ->
     Type = fxml:get_attr_s(<<"type">>, Attrs),
     case ejabberd_sm:get_user_resources(From#jid.user,From#jid.server) of
     Resources  when is_list(Resources) ->
-        if Type =:= <<"normal">> ; Type =:= <<"chat">>; Type =:= <<"revoke">>; Type =:= <<"note">> ;Type =:= <<"consult">>; Type =:= <<"encrypt">> ->
+        if Type =:= <<"normal">> ; Type =:= <<"chat">>; Type =:= <<"revoke">>; Type =:= <<"note">> ;Type =:= <<"consult">>; Type =:= <<"encrypt">>; Type =:= <<"webrtc">> ->
             case str:str(To#jid.server,<<"conference">>) =:= 0 andalso fxml:get_attr_s(<<"auto_reply">>, Attrs) =/= <<"true">>
                 andalso fxml:get_attr_s(<<"carbon_message">>, Attrs) =/= <<"true">>  of
                 true -> do_carbon_message(From, To, Packet, Resources);
