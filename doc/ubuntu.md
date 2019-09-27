@@ -83,6 +83,10 @@ tcp        0      0 127.0.0.1:6379          0.0.0.0:*               LISTEN      
 ```
 1、安装pg
 $ sudo apt install postgresql-11
+    如果提示：Unable to locate package postgresql-11，请执行下面语句，然后再安装:sudo apt install postgresql-11
+    $ sudo apt-get install wget ca-certificates
+    $ wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+    $ sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ `lsb_release -cs`-pgdg main" >> /etc/apt/sources.list.d/pgdg.list'
 $ sudo systemctl status postgresql
 确认启动成功
 ● postgresql.service - PostgreSQL RDBMS
