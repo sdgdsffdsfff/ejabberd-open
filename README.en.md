@@ -333,7 +333,7 @@ $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/
 $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/iosqtalk.json
 $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/iosstartalk.json
 
-# Change the IP to the IP address of the corresponding computer
+# Change the IP to the IP address of the corresponding computer(sed -i "s/ip/xxx.xxx.xxx.xxx/g")
 
 # Change the address of push service
 
