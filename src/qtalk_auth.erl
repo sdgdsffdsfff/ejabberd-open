@@ -25,14 +25,22 @@ check_user_password(Host, User, Password) ->
                         NewKey = qtalk_public:concat(User,<<"@">>,Host),
                         catch set_user_mac_key(Host,NewKey,Key)
                     end,
+		    ?INFO_MSG("the password is ~p~n", [{User, Host, Password1,Pass, Salt}]),
                     do_check_host_user(Password1,Pass, Salt);
                 _ -> false
            end,
            case R of
-               false -> ?ERROR_MSG("auth fail for ~p~n", [Json]), false;
+               false -> ?ERROR_MSG("auth fail for ~p~n", [{User, Host, Json}]), false;
                true -> true
            end;
-        _ -> do_check_host_user_auth(Host, User, user_type(Password))
+        _ ->
+           ?INFO_MSG("the password is ~p~n", [{User, Host, Password}]),
+           case do_check_host_user_auth(Host, User, user_type(Password)) of
+               true -> true;
+               R ->
+                   ?ERROR_MSG("auth fail for ~p~n", [{User, Host, Password, R}]),
+		   R
+           end
     end.
 
 do_check_host_user_auth(Host, User, {nauth, Password}) ->
@@ -70,7 +78,7 @@ do_check_host_user_auth(_Host, User, {anony, [Plat, UUID, Token, Password]}) ->
     case mod_redis:str_get(1, <<Plat/binary, User/binary>>) of
         {ok, Password} -> mod_redis:expire_time(1, <<Plat/binary, User/binary>>, 86400*7), true;
         _ ->
-            %%?ERROR_MSG("check anonymous unvalid fail for client ~p:~p~n", [User, {Plat, UUID, Token, Password}]),
+            ?ERROR_MSG("check anonymous unvalid fail for client ~p:~p~n", [User, {Plat, UUID, Token, Password}]),
             catch monitor_util:monitor_count(<<"login_fail_client_anonymous_token_unvalid">>, 1),
             {false, "out_of_date"}
     end.
