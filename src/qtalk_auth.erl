@@ -43,12 +43,11 @@ check_user_password(Host, User, Password) ->
            end
     end.
 
-do_check_host_user_auth(Host, User, {nauth, Password}) ->
-    {ok,{obj,L},[]} = rfc4627:decode(Password),
+do_check_host_user_auth(Host, User, {nauth, L}) ->
     Pass = proplists:get_value("p",L),
     Key = proplists:get_value("mk",L),
 
-    Url = ejabberd_config:get_option(auth_url,fun(Url)-> binary_to_list(Url) end,"http://127.0.0.1:8081/corp/auth/checktoken.qunar"),
+    Url = ejabberd_config:get_option(auth_url,fun(Url)-> binary_to_list(Url) end,"http://127.0.0.1:8081/im_http_service/corp/newapi/auth/checktoken.qunar"),
     Header = [],
     Type = "application/json",
     HTTPOptions = [],
@@ -90,6 +89,7 @@ user_type(Password) ->
             Token = proplists:get_value("token", List),
             UUID = proplists:get_value("uuid", List),
             {anony, [Plat, UUID, Token, Password]};
+	{ok, {obj, [{"nauth", {obj, List}}]}, []} -> {nauth, List};
         _ ->
             {nauth, Password}
     end.
