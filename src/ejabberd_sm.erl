@@ -883,7 +883,7 @@ insert_chat_msg(_Server,From, To,FromHost,ToHost, Msg,_Body,ID,InsertTime) ->
         LServer = get_server(FromHost,ToHost),
         Time = qtalk_public:pg2timestamp(InsertTime),
 
-        send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime),
+	catch send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime),
         insert_msg2db(LServer, LFrom,LTo,FromHost,ToHost,LID,LBody,Time, Realfrom,Realto,Type)
     end.
 
