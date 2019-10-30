@@ -158,7 +158,7 @@ $ chmod 777 /startalk/qtalk.sql
 ### Test ports
 
 ```
-# sudo netstat -antlp | egrep "8080|8005|8009|8081|8006|8010|8082|8007|8011|8083|8888|10056|5202|10050|5280|6379"
+# sudo netstat -antlp | egrep "8080|8005|8009|8081|8006|8010|8082|8007|8011|8083|8888|5202|10050|5280|6379"
 # If there is no output, it shows that the ports that Startalk is using are not occupied by other programs, or you need to close the programs that are occupying the ports.
 ```
 
