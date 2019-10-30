@@ -63,7 +63,7 @@ qfproxy：8006 8010 8082
 push_service：8007 8011 8083
 qtalk_search：8888
 
-im： 5202 10050
+im： 5202 10050 5280
 
 db: 5432 
 
