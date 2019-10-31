@@ -37,6 +37,7 @@
 	 get_role/2,
 	 get_affiliation/2,
 	 is_occupant_or_admin/2,
+     send_push_message/5,
 	 route/4]).
 
 %% gen_fsm callbacks
@@ -2823,7 +2824,7 @@ add_message_to_history(Time,Nick, FromJID, Packet, StateData) ->
     BPacket = fxml:element_to_binary(New_Packet),
     XML = ejabberd_sql:escape(BPacket),
 
-    send_push_message(Time, Nick, FromJID, New_Packet, StateData),
+    spawn(?MODULE, send_push_message, [Time, Nick, FromJID, New_Packet, StateData]),
     do_insert_msg(StateData, FromNick, FromJID, XML, Size, Msg_Id, MSecTime),
     StateData.
 

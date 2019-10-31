@@ -82,6 +82,7 @@
          delete_presence_spool/3,
 	 online/1,
 	 get_sm_backend/1,
+     send_push_message/7,
          get_user_present_resources_and_pid/2
  	]).
 
@@ -883,7 +884,7 @@ insert_chat_msg(_Server,From, To,FromHost,ToHost, Msg,_Body,ID,InsertTime) ->
         LServer = get_server(FromHost,ToHost),
         Time = qtalk_public:pg2timestamp(InsertTime),
 
-	catch send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime),
+	catch spawn(?MODULE, send_push_message, [From, To, FromHost, ToHost, Msg, ID, InsertTime]),
         insert_msg2db(LServer, LFrom,LTo,FromHost,ToHost,LID,LBody,Time, Realfrom,Realto,Type)
     end.
 
