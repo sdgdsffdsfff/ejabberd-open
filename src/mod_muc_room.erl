@@ -2783,13 +2783,9 @@ add_message_to_history(Nick, FromJID, Packet, StateData) ->
     add_message_to_history(Time, Nick, FromJID, Packet, StateData).
 
 add_message_to_history(Time,Nick, FromJID, Packet, StateData) ->
-    FromNick =
-        case Nick of
-        <<"">> ->
-            qtalk_public:get_nick(FromJID#jid.luser,FromJID#jid.luser);
-        _ ->
-            Nick
-        end,
+    FromLUser = FromJID#jid.luser,
+    FromLServer = FromJID#jid.lserver,
+    FromNick = <<FromLUser/binary, "_", FromLServer/binary>>,
     Msg_Id  =
         case catch fxml:get_tag_attr_s(<<"id">>,fxml:get_subtag(Packet,<<"body">>)) of
         <<"">> ->
@@ -5665,11 +5661,9 @@ check_Attrs_JID(User,Domain,Attrs, _StateData) ->
 
 send_muc_message(StateData,From,FromNick,Packet) ->
     lists:foreach(fun({_LJID, Info}) ->
-        NewFrom = jlib:jid_replace_resource(StateData#state.jid,
-            case FromNick of
-                <<"">> -> From#jid.luser;
-                _ -> FromNick
-            end),
+        FromLUser = From#jid.luser,
+        FromLServer = From#jid.lserver,
+        NewFrom = jlib:jid_replace_resource(StateData#state.jid,  <<FromLUser/binary, "_", FromLServer/binary>>),
         To = Info#user.jid, 
         NewPacket = jlib:replace_from_to(NewFrom, To, Packet),
         ejabberd_router:route(NewFrom,To,NewPacket)
