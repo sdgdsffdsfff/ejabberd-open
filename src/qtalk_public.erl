@@ -497,11 +497,11 @@ send_navversion(User, Server, Res, _Version) ->
     Ver = 
     case catch mod_redis:str_get(15,<<"navversion">>) of
     {ok,undefined} ->
-        <<"0">>;
+        <<"10000">>;
     {ok,B} when is_binary(B)  ->
         B;
     _ ->
-        <<"0">>
+        <<"10000">>
     end,
         
     From = jlib:jid_to_string({User,Server,<<"">>}),
