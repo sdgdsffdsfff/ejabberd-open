@@ -344,7 +344,7 @@ $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/
 
 很多同学都忘了这一步，所以导致启动的时候没有配置ip!
 
-*将ip替换成对应机器的ip地址(sed -i "s/ip/xxx.xxx.xxx.xxx/g")*
+**将ip替换成对应机器的ip地址(sed -i "s/ip/xxx.xxx.xxx.xxx/g")**
 
 ```
 修改推送服务的地址
