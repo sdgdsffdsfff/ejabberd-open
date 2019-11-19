@@ -337,7 +337,11 @@ $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/
 $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/iosqtalk.json
 $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/iosstartalk.json
 
-将ip替换成对应机器的ip地址(sed -i "s/ip/xxx.xxx.xxx.xxx/g")
+
+<table><tr><td bgcolor=orange><mark>将ip替换成对应机器的ip地址(sed -i "s/ip/xxx.xxx.xxx.xxx/g")</mark></td></tr></table>
+
+
+
 
 修改推送服务的地址
 
