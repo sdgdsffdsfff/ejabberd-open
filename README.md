@@ -342,7 +342,7 @@ $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/
 
 注意，这里务必务必要注意的一点，很多同学都会弄错的一点是：
 
-<table><tr><td bgcolor=orange>将ip替换成对应机器的ip地址(sed -i "s/ip/xxx.xxx.xxx.xxx/g")</td></tr></table>
+! 将ip替换成对应机器的ip地址(sed -i "s/ip/xxx.xxx.xxx.xxx/g")
 
 ```
 修改推送服务的地址
