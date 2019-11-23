@@ -2,6 +2,8 @@
 
 # Startalk EJABBERD
 
+[English Version](README.en.md)
+
 Startalk(前身叫Qtalk，目前主体app尚未全部改名完毕。)是基于ejabberd，根据业务需要改造而来。修改和扩展了很多
 ejaberd不支持的功能。
 
@@ -67,7 +69,7 @@ qfproxy服务：8006 8010 8082
 push_service服务：8007 8011 8083
 qtalk_search服务：8888
 
-im服务： 5222 5202 10050
+im服务： 5202 10050 5280
 
 db: 5432 
 
@@ -87,8 +89,8 @@ redis: 6379
 + 数据库用户名密码是ejabberd:123456，服务地址是：127.0.0.1
 + redis密码是：123456，服务地址是：127.0.0.1
 + 数据库初始化sql在doc目录下
-+ 保证可访问主机的：5222、5202、8080端口（关掉防火墙：sudo systemctl stop firewalld.service）
-+ IM服务的域名是:qtalk.test.org(大家安装线上之前，最好确定好这个值，一旦定了，之后修改的成本就很高，可以参考[domain修改](https://github.com/qunarcorp/ejabberd-open/wiki/host%E4%BF%AE%E6%94%B9)来修改)
++ 保证可访问主机的：5202、8080端口（关掉防火墙：sudo systemctl stop firewalld.service）
++ IM服务的域名是:qtalk(大家安装线上之前，最好确定好这个值，一旦定了，之后修改的成本就很高，可以参考[domain修改](https://github.com/qunarcorp/ejabberd-open/wiki/host%E4%BF%AE%E6%94%B9)来修改)
 + tls证书：默认安装用的是一个测试证书，线上使用，请更换/startalk/ejabberd/etc/ejabberd/server.pem文件，生成方法见[securing-ejabberd-with-tls-encryption](https://blog.process-one.net/securing-ejabberd-with-tls-encryption/)
 + 出现文件覆盖提示时，输入yes敲回车即可
 + 安装文档中#开头输入的命令表示root执行的，$开头的命令表示普通用户
@@ -98,13 +100,13 @@ redis: 6379
 # yum -y install epel-release
 # yum -y update
 # yum -y groupinstall Base "Development Tools" "Perl Support"
-# yum -y install openssl openssl-devel unixODBC unixODBC-devel pkgconfig libSM libSM-devel libxslt ncurses-devel libyaml libyaml-devel expat expat-devel libxml2-devel libxml2 java-1.8.0-openjdk  java-1.8.0-openjdk-devel  pam-devel pcre-devel gd-devel bzip2-devel zlib-devel libicu-devel libwebp-devel gmp-devel curl-devel postgresql-devel libtidy libtidy-devel recode aspell libmcrypt  libmemcached gd readline-devel libxslt-devel vim
+# yum install -y telnet aspell bzip2 collectd-postgresql collectd-rrdtool collectd.x86_64 curl db4 expat.x86_64 gcc gcc-c++ gd gdbm git gmp ImageMagick java-1.8.0-openjdk java-1.8.0-openjdk libcollection libedit libffi libicu libpcap libtidy libwebp libxml2 libXpm libxslt libyaml.x86_64 mailcap ncurses ncurses npm openssl openssl-devel pcre perl perl-Business-ISBN perl-Business-ISBN-Data perl-Collectd perl-Compress-Raw-Bzip2 perl-Compress-Raw-Zlib perl-Config-General perl-Data-Dumper perl-Digest perl-Digest-MD5 perl-Encode-Locale perl-ExtUtils-Embed perl-ExtUtils-MakeMaker perl-GD perl-HTML-Parser perl-HTML-Tagset perl-HTTP-Date perl-HTTP-Message perl-IO-Compress perl-IO-HTML perl-JSON perl-LWP-MediaTypes perl-Regexp-Common perl-Thread-Queue perl-TimeDate perl-URI python readline recode redis rrdtool rrdtool-perl sqlite systemtap-sdt.x86_64 tk xz zlib rng-tools python36-psycopg2.x86_64 python34-psycopg2.x86_64 python-psycopg2.x86_64 python-pillow python34-pip screen unixODBC unixODBC-devel pkgconfig libSM libSM-devel ncurses-devel libyaml-devel expat-devel libxml2-devel pam-devel pcre-devel gd-devel bzip2-devel zlib-devel libicu-devel libwebp-devel gmp-devel curl-devel postgresql-devel libtidy-devel libmcrypt libmcrypt readline-devel libxslt-devel vim docbook-dtds docbook-style-xslt fop
 ```
 
 ### 添加host
 
 ```
-# vim /ets/hosts
+# vim /etc/hosts
 添加下面一行
 127.0.0.1 startalk.com
 ```
@@ -133,9 +135,13 @@ redis: 6379
 ```
 # visudo 
 
-在行(root    ALL= (ALL)    ALL)行后添加
-(startalk     ALL= (ALL)    ALL)
-(postgres     ALL= (ALL)    ALL)
+在行
+root    ALL= (ALL)    ALL
+行后添加
+
+startalk     ALL= (ALL)    ALL
+postgres     ALL= (ALL)    ALL
+
 保存后退出
 ```
 
@@ -150,13 +156,14 @@ $ git clone https://github.com/qunarcorp/or_open.git
 $ git clone https://github.com/qunarcorp/qtalk_search.git
 
 $ cp ejabberd-open/doc/qtalk.sql /startalk/
+$ cp ejabberd-open/doc/init.sql /startalk/
 $ chmod 777 /startalk/qtalk.sql
 ```
 
 ### 检测端口使用：
 
 ```
-# sudo netstat -antlp | egrep "8080|8005|8009|8081|8006|8010|8082|8007|8011|8083|8888|10056|5222|5202|10050|5280|6379"
+# sudo netstat -antlp | egrep "8080|8005|8009|8081|8006|8010|8082|8007|8011|8083|8888|5202|10050|5280|6379"
 若没有任何输出，怎表明没有程序占用startalk使用的端口，否则需要关闭已经在使用端口的程序
 ```
 
@@ -222,21 +229,13 @@ tcp        0      0 127.0.0.1:5432          0.0.0.0:*               LISTEN      
 7. 初始化DB结构
  
 $ /opt/pg11/bin/psql -U postgres -d postgres -f /startalk/qtalk.sql
+$ /opt/pg11/bin/psql -U postgres -d ejabberd -f /startalk/init.sql
  
 8. 初始化DB user: ejabberd的密码
  
 $ /opt/pg11/bin/psql -U postgres -d postgres -c "ALTER USER ejabberd WITH PASSWORD '123456';"
  
-9. 初始化测试数据
- 
-$ /opt/pg11/bin/psql -U postgres -d ejabberd -c "
-insert into host_info (host, description, host_admin) values ('qtalk.test.org', 'qtalk.test.org', 'test');
-insert into host_users (host_id, user_id, user_name, department, dep1, pinyin, frozen_flag, version, user_type, hire_flag, gender, password, initialpwd, pwd_salt, ps_deptid) values ('1', 'test', '测试账号', '/机器人', '机器人', 'test', '0', '1', 'U', '1', '1', 'CRY:fd540f073cc09aa98220bbb234153bd5', '1', 'qtalkadmin_pwd_salt_d2bf42081aab47f4ac00697d7dd32993', 'qtalk');
-insert into vcard_version (username, version, profile_version, gender, host, url) values ('test', '1', '1', '1', 'qtalk.test.org', 'https://qt.qunar.com/file/v2/download/avatar/1af5bc967f8535a4af19eca10dc95cf1.png');
-insert into host_users (host_id, user_id, user_name, department, dep1, pinyin, frozen_flag, version, user_type, hire_flag, gender, password, initialpwd, pwd_salt, ps_deptid) values ('1', 'file-transfer', '文件传输助手', '/智能服务助手', '智能服务助手', 'file-transfer', '1', '1', 'U', '1', '1', 'CRY:fd540f073cc09aa98220bbb234153bd5', '1', 'qtalkadmin_pwd_salt_d2bf42081aab47f4ac00697d7dd32993', 'qtalk');
-insert into vcard_version (username, version, profile_version, gender, host, url) values ('file-transfer', '1', '1', '1', 'qtalk.test.org', 'https://qt.qunar.com/file/v2/download/avatar/new/daa8a007ae74eb307856a175a392b5e1.png?name=daa8a007ae74eb307856a175a392b5e1.png&file=file/daa8a007ae74eb307856a175a392b5e1.png&fileName=file/daa8a007ae74eb307856a175a392b5e1.png');
-"
-10 psql连接数据库
+9 psql连接数据库
 
 $ psql -U postgres -d ejabberd -h 127.0.0.1
 psql (9.2.24, server 11.1)
@@ -245,11 +244,6 @@ WARNING: psql version 9.2, server version 11.0.
 Type "help" for help.
 
 ejabberd=# select * from host_users;
- id | host_id |    user_id    |  user_name   |  department   | tel | email |     dep1     | dep2 | dep3 | dep4 | dep5 |    pinyin     | frozen_flag | version | user_type | hire_flag | gender |          password             | initialpwd | ps_deptid 
-----+---------+---------------+--------------+---------------+-----+-------+--------------+------+------+------+------+---------------+-------------+---------+-----------+-----------+--------+---------- ------------------------+------------+-----------
-  1 |       1 | test          | 测试账号     | /机器人       |     |       | 机器人       |      |      |      |      | test          |           0 |       1 | U         |         1 |      1 | 1234567890                       |          1 | qtalk
-  2 |       1 | file-transfer | 文件传输助手 | /智能服务助手 |     |       | 智能服务助手 |      |      |      |      | file-transfer |           1 |       1 | U         |         1 |      1 | 15f15057f5be45c6bb6522d08078e0d4 |          1 | qtalk
-(2 rows)
 ```
 
 ### openresty安装
@@ -336,11 +330,23 @@ $ cd /startalk/download/
 $ cp -rf or_open/deps/tomcat /startalk/
 $ cd /startalk/tomcat
 
-修改导航地址：
+修改导航地址和扩展键盘：
 $  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/nav.json
+$  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/androidqtalk.json
+$  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/androidstartalk.json
+$  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/iosqtalk.json
+$  vim /startalk/tomcat/im_http_service/webapps/im_http_service/WEB-INF/classes/iosstartalk.json
 
-将ip替换成对应机器的ip地址
 
+```
+
+注意注意注意注意！！！！
+
+很多同学都忘了这一步，所以导致启动的时候没有配置ip!
+
+**将ip替换成对应机器的ip地址(sed -i "s/ip/xxx.xxx.xxx.xxx/g")**
+
+```
 修改推送服务的地址
 
 $ vim /startalk/tomcat/push_service/webapps/push_service/WEB-INF/classes/app.properties
@@ -382,28 +388,37 @@ $ sudo yum install python36u
 安装pip3
 $ sudo yum -y install python-pip
 所需模块见/startalk/download/qtalk_search/requirements.txt, 建议使用virtualenv部署模块所需环境 (如不使用将系统级安装python3.6, 容易引起和大多数centos自带python2.7的冲突, 同时也需要自行安装python3的pip, 并指定pip3安装所需模块):
-                $ sudo pip install -U virtualenv （安装virtualenv）
-                $ sudo pip install --upgrade pip
-                $ virtualenv --system-site-packages -p python3.6 ./venv （在当前目录下创建venv环境）
-                启动环境
-                $ source venv/bin/activate
-                退出环境: 
-                $ deactivate
-
+$ sudo pip install -U virtualenv （安装virtualenv）
+$ sudo pip install --upgrade pip
+$ virtualenv --system-site-packages -p python3.6 ./venv （在当前目录下创建venv环境）
+启动环境
+$ source venv/bin/activate
 配置conf/configure.ini, 具体参数详见文件内注释, 如无特殊需求可不修改
 $ sudo vim ./conf/configure.ini
 安装项目所需模块(如未安装virtualenv, 需sudo yum install python36u-pip, 并使用sudo pip3.6代替命令中默认的pip)
 $ pip install -r requirements.txt
 设置PYTHONPATH
 $ export PYTHONPATH=path/to/project/qtalk_search:$PYTHONPATH
-后台启动 (后续将改为gunicorn部署)
-$ sudo nohup python3.6 search.py 1>/dev/null 2>/dev/null &
+后台启动
+$ supervisord -c conf/supervisor.conf
+$ supervisorctl -c conf/supervisor.conf reload
+确保服务启动（观察日志,确保无报错）
+$ tail -100f log/access.log 
 ```
+可以执行以下脚本来检查一些常见的错误: 下载该文件[check.sh](https://github.com/qunarcorp/or_open/blob/master/tools/check.sh)
+
+```
+# sed -i 's/ip/自己的ip/g' ./check.sh
+# chmod +x check.sh
+# ./check.sh
+```
+
+如果发现有提示："ip的5202端口未开启外网访问，请开启该端口访问或者关掉防火墙"，请在服务器上使用telnet ip 5202检查是否可以连上，一般是因为防火墙限制了或者端口就没监听。
 
 到此，服务端已经安装完成。
 请下载[startalk客户端](https://im.qunar.com/new/#/download)
 
-客户端配置导航地址：[http://ip:8080/newapi/nck/qtalk_nav.qunar](http://ip:8080/newapi/nck/qtalk_nav.qunar)，使用账号：test，密码：testpassword登陆(将ip替换成自己服务器的ip)
+客户端配置导航地址：[http://ip:8080/newapi/nck/qtalk_nav.qunar](http://ip:8080/newapi/nck/qtalk_nav.qunar)，使用账号：admin，密码：testpassword登陆(将ip替换成自己服务器的ip)
 
 客户端配置导航的说明[配置导航](https://im.qunar.com/#/platform/access_guide/config_navs?id=config_navs)
 
@@ -418,8 +433,9 @@ $ sudo nohup python3.6 search.py 1>/dev/null 2>/dev/null &
 * master(主干分支)
 * release(用于合并到master的准发布分支)
 * develop(当前开发分支)
-* v1.0(1.0版本的分支，当前最新稳定分支)
-* v1.1(1.1分支版本，支持Erlang/OTP 21.2)
+* v1.0(1.0版本的分支)
+* v1.1(1.1版本的分支，当前最新稳定分支)
+* v2.0(2.0分支版本，支持Erlang/OTP 21.2)
 
 
 大家提交pull request的时候，可以根据不同分支的功能，合并到不同的分支

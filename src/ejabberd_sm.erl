@@ -82,6 +82,7 @@
          delete_presence_spool/3,
 	 online/1,
 	 get_sm_backend/1,
+     send_push_message/7,
          get_user_present_resources_and_pid/2
  	]).
 
@@ -872,6 +873,10 @@ insert_chat_msg(_Server,From, To,FromHost,ToHost, Msg,_Body,ID,InsertTime) ->
     case jlib:nodeprep(From) of
     error -> {error, invalid_jid};
     LUser ->
+        Packet = #xmlel{attrs = Attrs} = fxml_stream:parse_element(Msg),
+        Type = fxml:get_attr_s(<<"type">>, Attrs),
+        Realfrom = fxml:get_attr_s(<<"realfrom">>, Attrs),
+        Realto = fxml:get_attr_s(<<"realto">>, Attrs),
         LFrom = ejabberd_sql:escape(LUser),
         LTo = ejabberd_sql:escape(To),
         LBody = ejabberd_sql:escape(Msg),
@@ -879,12 +884,19 @@ insert_chat_msg(_Server,From, To,FromHost,ToHost, Msg,_Body,ID,InsertTime) ->
         LServer = get_server(FromHost,ToHost),
         Time = qtalk_public:pg2timestamp(InsertTime),
 
-        send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime),
-        insert_msg2db(LServer, LFrom,LTo,FromHost,ToHost,LID,LBody,Time)
+	catch spawn(?MODULE, send_push_message, [From, To, FromHost, ToHost, Msg, ID, InsertTime]),
+        insert_msg2db(LServer, LFrom,LTo,FromHost,ToHost,LID,LBody,Time, Realfrom,Realto,Type)
     end.
 
 insert_msg2db(LServer, LFrom,LTo,From_host,To_host,LID,LBody,Time) ->
     case catch qtalk_sql:insert_msg_v2(LServer, LFrom,LTo,From_host,To_host,LBody,LID,Time) of
+        {updated, 1} -> {atomic, ok};
+        A -> ?INFO_MSG("Insert Msg error Body: ~p ,~p ~n",[A,LBody]), {atomic, exists}
+    end.
+
+
+insert_msg2db(LServer, LFrom,LTo,From_host,To_host,LID,LBody,Time, Realfrom, Realto, Type) ->
+    case catch qtalk_sql:insert_msg_v3(LServer, LFrom,LTo,From_host,To_host,LBody,LID,Time, Realfrom, Realto, Type) of
         {updated, 1} -> {atomic, ok};
         A -> ?INFO_MSG("Insert Msg error Body: ~p ,~p ~n",[A,LBody]), {atomic, exists}
     end.
@@ -1176,13 +1188,15 @@ get_server(From_host,To_host) ->
 
 %% 将所有消息通过接口发送个第三方服务
 send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime) ->
-    PushUrl = ejabberd_config:get_option(push_url, fun(Url)-> Url end, undefined),
-    case PushUrl of
+    PushUrls = ejabberd_config:get_option(push_url, fun(Url)-> Url end, undefined),
+    case PushUrls of
         undefined -> ok;
-        _ -> do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrl)
+        _ -> do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrls)
     end.
 
-do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrl) ->
+do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, []) ->
+    ok;
+do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, [PushUrl|Rest]) ->
     case jlib:nodeprep(From) of
     error -> {error, invalid_jid};
     LUser ->
@@ -1217,4 +1231,5 @@ do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, PushUrl) -
         case catch http_client:http_post(binary_to_list(PushUrl), [{"connection", "close"}], "application/json", MsgContent, [], []) of
             Res -> ?DEBUG("the res is ~p~n", [Res])
         end
-    end.
+    end,
+    do_send_push_message(From, To, FromHost, ToHost, Msg, ID, InsertTime, Rest).

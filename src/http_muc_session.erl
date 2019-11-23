@@ -85,7 +85,6 @@ get_value(Key,Args,Default) ->
 	end.
 
 delete_unavailable_user(Server,Muc_id,Domain,User) ->
-	% case mnesia:dirty_read(muc_online_room, {Muc_id, Domain}) of
     case mod_muc_redis:get_muc_room_pid(Muc_id, Domain) of
 	 [] ->
 	 	ok;
@@ -94,7 +93,6 @@ delete_unavailable_user(Server,Muc_id,Domain,User) ->
 	 end.
 	 	
 remove_muc_users(Server,Users,Muc_id,Domain) ->
-%	case catch mnesia:dirty_read(muc_online_room, {Muc_id, Domain}) of
     case mod_muc_redis:get_muc_room_pid(Muc_id, Domain) of
 	[] ->
 		lists:foreach(fun(U) ->
@@ -159,7 +157,6 @@ make_del_register_muc_iq() ->
     
 
 handle_add_muc_users(Server,Muc_id,Domain,Jid) ->
-   % case catch mnesia:dirty_read(muc_online_room, {Muc_id, Domain}) of
     case mod_muc_redis:get_muc_room_pid(Muc_id, Domain) of
     [] ->
         catch qtalk_sql:insert_muc_users(Server,Muc_id,Jid#jid.luser,Jid#jid.lserver);

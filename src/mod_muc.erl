@@ -175,21 +175,13 @@ init([Host, Opts]) ->
 				  <<"conference.@HOST@">>),
     Mod = gen_mod:db_mod(Host, Opts, ?MODULE),
     Mod:init(Host, [{host, MyHost}|Opts]),
-    mnesia:create_table(muc_online_room,
-			[{ram_copies, [node()]},
-			 {attributes, record_info(fields, muc_online_room)}]),
-    mnesia:add_table_copy(muc_online_room, node(), ram_copies),
     catch ets:new(muc_online_users, [bag, named_table, public, {keypos, 2}]),
-    catch ets:new(muc_users,[set,named_table,public,{keypos,1},{write_concurrency, true}, {read_concurrency, true}]),
     catch ets:new(muc_opts,[set,named_table,public,{keypos,1},{write_concurrency, true}, {read_concurrency, true}]),
-    %%clean_table_from_bad_node(node(), MyHost),
 
     mnesia:subscribe(system),
     %%mod_muc_redis:clear_all_muc(MyHost),
     mod_muc_redis:test1(Host, MyHost),
     
-    catch ets:new(muc_affiliation,[set,named_table,public,{keypos,1},{write_concurrency, true}, {read_concurrency, true}]),    
-
     Access = gen_mod:get_opt(access, Opts,
                              fun acl:access_rules_validator/1, all),
     AccessCreate = gen_mod:get_opt(access_create, Opts,
@@ -264,10 +256,7 @@ init([Host, Opts]) ->
            default_room_opts = DefRoomOpts,history_size = HistorySize,room_shaper = RoomShaper},
     catch ets:insert(muc_opts, {MyHost,DefOpts}),
 
-%    ejabberd_router:register_route(MyHost, Host),
     ejabberd_router:register_route(MyHost,Host, {apply, ?MODULE, route}),
-
-    load_permanent_rooms_affiliations(Host,MyHost),
 
     {ok, #state{host = MyHost,
 		server_host = Host,
@@ -316,11 +305,7 @@ handle_info({room_destroyed, RoomHost, Pid}, State) ->
     mod_muc_redis:room_destroyed(Host,Room,Pid),
     {noreply, State};
 handle_info({mnesia_system_event, {mnesia_down, Node}}, State) ->
-   % clean_table_from_bad_node(Node),
     clean_table_from_bad_node(Node,State#state.host),
-    {noreply, State};
-handle_info({update_user_affiliation,Method,Muc,Jid,Aff},State) ->
-    update_user_affiliation(Method,Muc,Jid,Aff),
     {noreply, State};
 handle_info(_Info, State) -> {noreply, State}.
 
@@ -576,7 +561,7 @@ start_new_room(Host, ServerHost, Access, Room,
 	    Nick, DefRoomOpts) ->
     case restore_room(ServerHost, Host, Room) of
 	error ->
-	    ?ERROR_MSG("MUC: open new room '~p'~n", [{ServerHost, Host, Room}]),
+	    ?INFO_MSG("MUC: open new room '~p'~n", [{ServerHost, Host, Room}]),
 	    mod_muc_room:start(Host, ServerHost, Access, Room,
 		HistorySize, RoomShaper,
 		From, Nick, DefRoomOpts);
@@ -883,44 +868,6 @@ mod_opt_type(_) ->
      max_users_admin_threshold, max_users_presence,
      min_message_interval, min_presence_interval,
      room_shaper, user_message_shaper, user_presence_shaper].
-
-load_permanent_rooms_affiliations(LServer,Host) ->
-    SHost = ejabberd_sql:escape(Host),
-    case catch ejabberd_sql:sql_query(LServer,
-                       [<<"select name, opts from muc_room ">>,
-                    <<"where host='">>, SHost, <<"';">>])
-    of
-      {selected, [<<"name">>, <<"opts">>], RoomOpts} ->
-      lists:foreach(fun ([Room, Opts]) ->
-                      Affction = get_affction_opts(
-                                               ejabberd_sql:decode_term(Opts)),
-                      catch ets:insert(muc_affiliation,{Room,Affction})
-            end,
-            RoomOpts);
-      Err -> ?ERROR_MSG("failed to get rooms: ~p", [Err]), []
-    end.
-
-
-update_user_affiliation(<<"update">>,Muc,JID,Aff) ->
-    case catch ets:lookup(muc_affiliation,Muc) of
-        [{_,L}] when is_list(L) andalso L =/= [] ->
-            Aff1 = proplists:get_value(JID,L),
-            if Aff1 =:= Aff -> ok;
-            true ->
-                L1 = lists:keydelete(JID,1,L),
-                L2 = lists:append([{JID,Aff}],L1),
-                catch ets:insert(muc_affiliation,{Muc,L2})
-            end;
-        _ -> ok
-    end;
-update_user_affiliation(<<"delete">>, Muc, JID, _Aff) ->
-    case catch ets:lookup(muc_affiliation,Muc) of
-        [{_,L}] when is_list(L) andalso L =/= [] ->
-            L1 = lists:keydelete(JID,1,L),
-            catch ets:insert(muc_affiliation,{Muc,L1});
-        _ -> ok
-    end;
-update_user_affiliation(_, _Muc, _JID, _Aff) -> ok.
 
 get_affction_opts(Opts) ->
     lists:flatmap(fun({affiliations, Affs}) ->

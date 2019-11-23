@@ -6,19 +6,16 @@
 
 -module(qtalk_auth).
 
--export([wlan_check_password/3,check_frozen_flag/1]).
--export([kick_token_login_user/2]).
 -export([check_user_password/3]).
--export([do_md5/1]).
 
 -include("ejabberd.hrl").
 -include("logger.hrl").
 
 check_user_password(Host, User, Password) ->
-    R = case qtalk_sql:get_password_salt_by_host(Host, User) of
-        {selected,_, [[Password1, Salt]]} -> 
-            case catch rsa:dec(base64:decode(Password)) of
-                Json when is_binary(Json) ->
+    case catch rsa:dec(base64:decode(Password)) of
+        Json when is_binary(Json) ->
+            R = case qtalk_sql:get_password_salt_by_host(Host, User) of
+                {selected,_, [[Password1, Salt]]} ->
                     {ok,{obj,L},[]} = rfc4627:decode( Json),
                     Pass = proplists:get_value("p",L),
                     Key = proplists:get_value("mk",L),
@@ -28,18 +25,74 @@ check_user_password(Host, User, Password) ->
                         NewKey = qtalk_public:concat(User,<<"@">>,Host),
                         catch set_user_mac_key(Host,NewKey,Key)
                     end,
-                    ?INFO_MSG("the auth info: ~p~n", [{Password1,Pass, Salt}]),
+		    ?INFO_MSG("the password is ~p~n", [{User, Host, Password1,Pass, Salt}]),
                     do_check_host_user(Password1,Pass, Salt);
-               _ -> false
+                _ -> false
+           end,
+           case R of
+               false -> ?ERROR_MSG("auth fail for ~p~n", [{User, Host, Json}]), false;
+               true -> true
            end;
-        _ -> false
-    end,
+        _ ->
+           ?INFO_MSG("the password is ~p~n", [{User, Host, Password}]),
+           case do_check_host_user_auth(Host, User, user_type(Password)) of
+               true -> true;
+               R ->
+                   ?ERROR_MSG("auth fail for ~p~n", [{User, Host, Password, R}]),
+		   R
+           end
+    end.
 
-    if R =:= false -> ?ERROR_MSG("the auth info is ~p~n", [{Host,User,Password}]);
-    true -> ok
-    end,
+do_check_host_user_auth(Host, User, {nauth, L}) ->
+    Pass = proplists:get_value("p",L),
+    Key = proplists:get_value("mk",L),
 
-    R.
+    Url = ejabberd_config:get_option(auth_url,fun(Url)-> binary_to_list(Url) end,"http://127.0.0.1:8081/im_http_service/corp/newapi/auth/checktoken.qunar"),
+    Header = [],
+    Type = "application/json",
+    HTTPOptions = [],
+    Options = [],
+    Body = rfc4627:encode({obj, [{"u", User}, {"h", Host}, {"t", Pass}]}),
+    case catch http_client:http_post(Url,Header,Type,Body,HTTPOptions,Options) of
+    {ok, {_Status,_Headers, Res}} ->
+        case rfc4627:decode(Res) of
+            {ok,{obj,Args},_} ->
+                case proplists:get_value("ret", Args) of
+                    R when R =:= true; R =:= "true" ->
+                        case Key of
+                            undefined -> ok;
+                            _ ->
+                                NewKey = qtalk_public:concat(User,<<"@">>,Host),
+                                catch set_user_mac_key(Host,NewKey,Key)
+                        end,
+                        true;
+                    _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), {false, <<"nauth-expired">>}
+                end;
+             _ -> ?ERROR_MSG("auth password fail for ~p~n", [Res]), {false, <<"nauth-http-response-error">>}
+        end;
+      R -> ?ERROR_MSG("auth password fail for ~p~n", [R]), {false, <<"nauth-http-fail">>}
+    end;
+do_check_host_user_auth(_Host, User, {anony, [Plat, UUID, Token, Password]}) ->
+    ?DEBUG("check_password the user type is client and anonymous auth, the user is ~p, token is ~p~n", [User, [Plat, UUID, Token]]),
+    case mod_redis:str_get(1, <<Plat/binary, User/binary>>) of
+        {ok, Password} -> mod_redis:expire_time(1, <<Plat/binary, User/binary>>, 86400*7), true;
+        _ ->
+            ?ERROR_MSG("check anonymous unvalid fail for client ~p:~p~n", [User, {Plat, UUID, Token, Password}]),
+            catch monitor_util:monitor_count(<<"login_fail_client_anonymous_token_unvalid">>, 1),
+            {false, "out_of_date"}
+    end.
+
+user_type(Password) ->
+    case rfc4627:decode(Password) of
+        {ok, {obj, [{"anony", {obj, List}}]}, []} ->
+            Plat = proplists:get_value("plat", List),
+            Token = proplists:get_value("token", List),
+            UUID = proplists:get_value("uuid", List),
+            {anony, [Plat, UUID, Token, Password]};
+	{ok, {obj, [{"nauth", {obj, List}}]}, []} -> {nauth, List};
+        _ ->
+            {nauth, Password}
+    end.
 
 do_check_host_user(<<"CRY:", _>>, _, null) -> false;
 do_check_host_user(<<"CRY:", Password/binary>>,Pass, Salt) ->
@@ -52,55 +105,20 @@ do_check_host_user(_, _, _) -> false.
 
 do_md5(S) ->
      p1_sha:to_hexlist(erlang:md5(S)).
-%%--------------------------------------------------------------------
-%%%% @date 2017-03-01
-%%%%% WLAN 密码验证
-%%%%%--------------------------------------------------------------------
 
-wlan_check_password(_Server, _User, _Pass) ->
-    true.
-
-%%--------------------------------------------------------------------
-%%%% @date 2017-03-01
-%%%%% 黑名单检查
-%%%%%--------------------------------------------------------------------
-check_frozen_flag(_User) ->
-    true.
-
-kick_token_login_user(Username,Server) ->
-    case ejabberd_sm:get_user_present_resources_and_pid(Username, Server) of
-    [] ->
-        ok;
-    Resources ->
-        lists:foreach(
-            fun({_,Resource,PID}) ->
-                case str:str(Resource,<<"Android">>) =:= 0 andalso str:str(Resource,<<"iPhone">>) =:= 0 of
-                false ->
-                    if is_pid(PID) ->
-                        ?ERROR_MSG("kick user ~p~n", [{Username, Resource}]),
-                        PID ! kick;
-                    true ->
-                        ok
-                    end;
-               true ->
-                    ok
-                end
-            end, Resources)
-    end.
-
-set_user_mac_key(Server,User,Key) ->
+set_user_mac_key(_Server,User,Key) ->
     UTkey = str:concat(User,<<"_tkey">>),
-    case redis_link:redis_cmd(Server,2,["HKEYS",UTkey]) of
+    case mod_redis:redis_cmd(2,["HKEYS",UTkey]) of
     {ok,L} when is_list(L) ->
         case lists:member(Key,L) of
         true ->
             lists:foreach(fun(K) ->
-                    catch redis_link:hash_del(Server,2,UTkey,K) end,L -- [Key]);
+                    catch mod_redis:hash_del(2,UTkey,K) end,L -- [Key]);
         _ ->
             lists:foreach(fun(K) ->
-                    catch redis_link:hash_del(Server,2,UTkey,K) end,L -- [Key]),
-            catch redis_link:hash_set(Server,2,UTkey,Key,qtalk_public:get_timestamp())
+                    catch mod_redis:hash_del(2,UTkey,K) end,L -- [Key]),
+            catch mod_redis:hash_set(2,UTkey,Key,qtalk_public:get_timestamp())
         end;
     _ ->
-        catch redis_link:hash_set(Server,2,UTkey,Key,qtalk_public:get_timestamp())
+        catch mod_redis:hash_set(2,UTkey,Key,qtalk_public:get_timestamp())
     end.

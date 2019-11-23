@@ -36,7 +36,7 @@
 ## 4: Info
 ## 5: Debug
 ##
-loglevel: 5
+loglevel: 4
 
 ##
 ## rotation: Describe how to rotate logs. Either size and/or date can trigger
@@ -94,7 +94,7 @@ log_rate_limit: 20000
 ##   - "example.org"
 ##
 hosts:
-  - "qtalk.test.org"
+  - "qtalk"
 
 ##
 ## route_subdomains: Delegate subdomains to other XMPP servers.
@@ -111,33 +111,6 @@ route_subdomains: s2s
 ## by and what options to start it with.
 ##
 listen: 
-  - 
-    port: 5222
-    module: ejabberd_c2s
-    certfile: "/startalk/ejabberd/etc/ejabberd/server.pem"
-    starttls: true
-    #starttls: true
-    ##
-    ## If TLS is compiled in and you installed a SSL
-    ## certificate, specify the full path to the
-    ## file and uncomment these lines:
-    ##
-    ## certfile: "/path/to/ssl.pem"
-    ## starttls: true
-    ##
-    ## To enforce TLS encryption for client connections,
-    ## use this instead of the "starttls" option:
-    ##
-    ## starttls_required: true
-    ##
-    ## Custom OpenSSL options
-    ##
-    ## protocol_options:
-    ##   - "no_sslv3"
-    ##   - "no_tlsv1"
-    max_stanza_size: 65536
-    shaper: c2s_shaper
-    access: c2s
   -
     port: 5202
     certfile: "/startalk/ejabberd/etc/ejabberd/server.pem"
@@ -369,6 +342,11 @@ sql_database: "ejabberd"
 sql_username: "ejabberd"
 sql_password: "123456"
 
+pg_size_args:
+  size: 10
+  max_overflow: 20
+pg_worker_args:
+    sql_start_interval: 30
 ##
 ## If you want to specify the port:
 ## sql_port: 1234
@@ -563,12 +541,13 @@ access_rules:
 language: "en"
 
 sm_db_type: redis
-redis_start_mode: 0
-redis_pool_size: 1
-redis_server: "127.0.0.1"
-redis_port: 6379
-redis_password: "123456"
-redis_tab: "0,1,2,3,5,7,10,11,15"
+redis_size_args:
+  size: 10
+  max_overflow: 20
+redis_worker_args:
+  host: "127.0.0.1"
+  port: 6379
+  password: "123456"
 
 #sm_db_type: sql
 ##
@@ -669,13 +648,28 @@ modules:
 ##
 
 allow_contrib_modules: true
-default_host: "qtalk.test.org"
-default_domain: "conference.qtalk.test.org"
+default_host: "qtalk"
+default_domain: "conference.qtalk"
 
-push_url: "http://127.0.0.1:8083/push_service/qtapi/token/sendMessageToPush.qunar"
+push_url:
+  - "http://127.0.0.1:8083/push_service/qtapi/token/sendMessageToPush.qunar"
+
+auth_url: "http://127.0.0.1:8081/im_http_service/corp/newapi/auth/checktoken.qunar"
 
 rsa_public_key: "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCy2VXDAlCZlj7gPHvC/vwvbpTN\n/GyW0tmNCqh0UPitdTTGZk3UcLqu9lWMGPViL/5lhboiSogsDxJLHdwo91DDBjTX\n1HbuyuOhvsvayV7Yc8t+ajFW/8RwlvhGSzVplthoU+md9kGeZ8t73VWWZUEB0iyW\nx7Y/RjUwTdnOlNXDzQIDAQAB\n-----END PUBLIC KEY-----"
 rsa_private_key: "-----BEGIN RSA PRIVATE KEY-----\nMIICXAIBAAKBgQCy2VXDAlCZlj7gPHvC/vwvbpTN/GyW0tmNCqh0UPitdTTGZk3U\ncLqu9lWMGPViL/5lhboiSogsDxJLHdwo91DDBjTX1HbuyuOhvsvayV7Yc8t+ajFW\n/8RwlvhGSzVplthoU+md9kGeZ8t73VWWZUEB0iyWx7Y/RjUwTdnOlNXDzQIDAQAB\nAoGAHlGlrkdoLoE/63eVa3saeVf/tePC7NaVtslFwWIwpgcmiTOyof7yRtLPsc5R\nWvHT6JYA9es4pm9vpHhNaEx0zjJkuAW9ECLb4dZA1b6stQy7nHl7dgT13RsEjKJI\n3CYLmK2Mneis9dObzz0CqMgdbAA456zQ4VuMlwJZzf0BT8ECQQDWipbxMey0tn+1\nI4lL+1JYfrfQZoA+dv0d8X2gt0d8itJFPQYWsJCt4vUl48c58E+hWarCBl+yl4ym\nz7RltmwpAkEA1WkIvwWlCyliUpgM7V0rp8vxBPyTXqNZ6+xiqVotX2PIQ116fNVW\n5Tx5DoAxQ/c+QALOZXAiY7BiAZ+AMl1PBQJAZaAYiAAiJCgerms66icOhqTf5XPo\nY65xj/GIlMy8rB4GJI4XiD/zCKttfJk9EhDnZ4LWBDqIskxfb9ULmvKioQJAfo6w\nWh/t1WWwYky7ddRH/FVMVGm4t2nl/KwNgmLw/128OH7qEbeutXkcTUYmcSjhaLKB\nVdSfAEFsjYvaSYPeRQJBANLk4jCONVQkYzSmnvqUrFvDOFq9Ei5J08waevFIoaia\nJJ9OvMg0AueWwHo/kfNz1GkCV6de4mKTshgT5d2V0T4=\n-----END RSA PRIVATE KEY-----"
+
+muc_pics:
+  - "/file/v2/download/5645fc02eac20176c8a3569d83f3ff7a.png"
+  - "/file/v2/download/6f3f04cfa23acb9e7050bb5b3fc208b4.png"
+  - "/file/v2/download/d63e7f0da0d89a38e0fec160ade307f3.png"
+  - "/file/v2/download/5fae186a0a6358d9acfa7aac2ab9ec7e.png"
+  - "/file/v2/download/c48d543591c3ba25767a680d927e47a3.png"
+  - "/file/v2/download/d74779b795e16dde2c7fe761a11cb5d0.png"
+
+##edition: "commercial"
+##serial: "69f220e-895b"
+
 
 ###.
 ###'

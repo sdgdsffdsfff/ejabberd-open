@@ -1922,6 +1922,7 @@ print_state(State = #state{pres_t = T, pres_f = F, pres_a = A}) ->
 
 terminate(Reason, StateName, StateData) ->
     ?INFO_MSG("Reason ~p ~n",[Reason]),
+    spawn(login_success_util, close_stat, [StateData#state.user, StateData#state.server, StateData#state.resource, StateData#state.ip, StateData#state.sid]),
     case StateData#state.mgmt_state of
       resumed ->
 	  ?INFO_MSG("Closing former stream of resumed session for ~s",
@@ -3374,7 +3375,7 @@ opt_type(_) ->
 %%%%%%%%%%%%%% 发送http key presence
 %%%%%%%%%%%%%%-----------------------------------------------------------
 send_time_key_presence(Server,User,Resource,StateData) ->
-    case redis_link:hash_get(Server,1,User,Resource) of
+    case mod_redis:hash_get(1,User,Resource) of
     {ok,undefined} ->
         StateData;
     {ok,Key} when Key =/= <<"">> ->
